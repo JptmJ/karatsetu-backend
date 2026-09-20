@@ -46,6 +46,13 @@ export interface RouteSpec {
   permission?: string;
   /** Requires a signed-in user. Defaults to true. */
   auth?: boolean;
+  /**
+   * Which kind of token this route accepts.
+   *   tenant   — a normal user of a jewellery business (the default)
+   *   platform — a super admin / support engineer, who has no tenant
+   * Routes under /api/platform are platform-scoped automatically.
+   */
+  scope?: 'tenant' | 'platform';
   params?: ZodType;
   query?: ZodType;
   body?: ZodType;
@@ -66,9 +73,15 @@ export function defineRoute(spec: RouteSpec): RouteSpec {
   if (duplicate) {
     throw new Error(`Route ${spec.method.toUpperCase()} ${spec.path} is declared twice.`);
   }
-  routes.push(spec);
+  // Path is the source of truth for scope, so a platform route can never be
+  // declared with tenant auth by accident.
+  const scope = spec.scope ?? (spec.path.startsWith('/api/platform') ? 'platform' : 'tenant');
+  routes.push({ ...spec, scope });
   return spec;
 }
+
+export const routeScope = (route: RouteSpec): 'tenant' | 'platform' =>
+  route.scope ?? (route.path.startsWith('/api/platform') ? 'platform' : 'tenant');
 
 export const allRoutes = (): RouteSpec[] => [...routes];
 
@@ -103,11 +116,17 @@ export function changeFeed(limit = 60): Array<RouteChange & { method: HttpMethod
     .slice(0, limit);
 }
 
-/** Builds the Express router from everything declared so far. */
-export function buildRouter(): Router {
+/**
+ * Builds an Express router from the declared routes.
+ *
+ * `filter` lets the app mount tenant and platform routes on separate routers,
+ * each behind its own authentication middleware.
+ */
+export function buildRouter(filter?: (route: RouteSpec) => boolean): Router {
   const router = Router();
+  const selected = filter ? routes.filter(filter) : routes;
 
-  for (const route of routes) {
+  for (const route of selected) {
     const chain: RequestHandler[] = [];
 
     if (route.permission) chain.push(requirePermission(route.permission));
@@ -128,7 +147,7 @@ export function buildRouter(): Router {
     router[route.method](route.path, ...chain);
   }
 
-  logger.info({ routes: routes.length }, 'API routes registered');
+  logger.debug({ routes: selected.length }, 'Routes registered on router');
   return router;
 }
 

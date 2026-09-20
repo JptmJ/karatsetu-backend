@@ -15,7 +15,10 @@
     "db:sync": "tsx src/cli/schema-sync.ts",
     "db:seed": "tsx src/cli/seed.ts",
     "test": "vitest run",
-    "gen:client": "tsx src/cli/generate-client.ts"
+    "gen:client": "tsx src/cli/generate-client.ts",
+    "gen:docs": "tsx src/cli/generate-docs.ts",
+    "migrate:roles": "tsx src/cli/migrate-roles.ts",
+    "seed:superadmin": "tsx src/cli/seed-superadmin.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

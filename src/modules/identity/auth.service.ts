@@ -13,6 +13,7 @@ import { runWithContext } from '../../core/context/request-context.js';
 import { env } from '../../core/config/env.js';
 import { UnauthorizedError } from '../../core/errors/app-error.js';
 import { newId } from '../../core/util/id.js';
+import { permissionsFor } from '../platform/roles.js';
 
 const scrypt = promisify(scryptCallback) as (p: string, s: Buffer, k: number) => Promise<Buffer>;
 const KEY_LENGTH = 64;
@@ -79,11 +80,11 @@ export async function login(
     tx.maybeOne<{
       id: string; tenant_id: string; email: string; full_name: string; password_hash: string;
       is_active: boolean; default_branch_id: string | null; locked_until: string | null;
-      failed_login_count: number; tenant_code: string; tenant_name: string; tenant_kind: string;
-      tenant_status: string;
+      failed_login_count: number; role_code: string; tenant_code: string; tenant_name: string;
+      tenant_kind: string; tenant_status: string;
     }>(
       `select u.id, u.tenant_id, u.email, u.full_name, u.password_hash, u.is_active,
-              u.default_branch_id, u.locked_until, u.failed_login_count,
+              u.default_branch_id, u.locked_until, u.failed_login_count, u.role_code,
               t.code as tenant_code, t.display_name as tenant_name, t.kind as tenant_kind,
               t.status as tenant_status
          from app_user u
@@ -128,15 +129,9 @@ export async function login(
 
   return runWithContext(context, async () =>
     transaction(async (tx) => {
-      const roleRows = await tx.query<{ code: string; permissions: string[] }>(
-        `select r.code, r.permissions
-           from user_role ur join role r on r.id = ur.role_id
-          where ur.user_id = $1`,
-        [found.id],
-      );
-
-      const roles = roleRows.map((r) => r.code);
-      const permissions = [...new Set(roleRows.flatMap((r) => r.permissions ?? []))];
+      // The role sits on the user row now, and its permissions come from code.
+      const roles = [found.role_code];
+      const permissions = permissionsFor(found.role_code);
 
       await tx.query(
         `update app_user set last_login_at = now(), failed_login_count = 0, locked_until = null
@@ -194,9 +189,10 @@ async function recordFailedLogin(tenantId: string, userId: string, attempts: num
 export async function refreshSession(refreshToken: string): Promise<{ accessToken: string }> {
   const row = await asPlatform(async (tx) =>
     tx.maybeOne<{
-      user_id: string; tenant_id: string; default_branch_id: string | null; expires_at: string; revoked_at: string | null;
+      user_id: string; tenant_id: string; default_branch_id: string | null; expires_at: string;
+      revoked_at: string | null; role_code: string;
     }>(
-      `select rt.user_id, rt.tenant_id, rt.expires_at, rt.revoked_at, u.default_branch_id
+      `select rt.user_id, rt.tenant_id, rt.expires_at, rt.revoked_at, u.default_branch_id, u.role_code
          from refresh_token rt join app_user u on u.id = rt.user_id
         where rt.token_hash = $1`,
       [hashToken(refreshToken)],
@@ -218,17 +214,13 @@ export async function refreshSession(refreshToken: string): Promise<{ accessToke
 
   return runWithContext(context, async () =>
     transaction(async (tx) => {
-      const roleRows = await tx.query<{ code: string; permissions: string[] }>(
-        `select r.code, r.permissions from user_role ur join role r on r.id = ur.role_id where ur.user_id = $1`,
-        [row.user_id],
-      );
       return {
         accessToken: signAccessToken({
           sub: row.user_id,
           tenantId: row.tenant_id,
           branchId: row.default_branch_id,
-          roles: roleRows.map((r) => r.code),
-          permissions: [...new Set(roleRows.flatMap((r) => r.permissions ?? []))],
+          roles: [row.role_code],
+          permissions: permissionsFor(row.role_code),
         }),
       };
     }),

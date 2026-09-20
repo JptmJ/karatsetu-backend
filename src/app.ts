@@ -1,10 +1,11 @@
 import express from 'express';
 import { pinoHttp } from 'pino-http';
 import { logger } from './core/util/logger.js';
-import { authenticate, errorHandler, requestId } from './core/http/middleware.js';
+import { authenticate, authenticatePlatform, errorHandler, requestId } from './core/http/middleware.js';
 import { pool } from './core/db/pool.js';
 import { env } from './core/config/env.js';
 import { buildRouter } from './api/index.js';
+import { routeScope } from './core/http/route-registry.js';
 import { renderDevDocs } from './core/docs/dev-docs.js';
 import { allRoutes } from './core/http/route-registry.js';
 
@@ -76,13 +77,17 @@ export function createApp() {
     });
   });
 
-  /* Auth applies to everything under /api except the auth routes themselves. */
-  app.use('/api', (req, res, next) => {
+  app.use('/api/platform', (req, res, next) => {
     if (req.path.startsWith('/auth/')) return next();
+    return authenticatePlatform(req, res, next);
+  });
+  app.use(buildRouter((r) => routeScope(r) === 'platform'));
+
+  app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/auth/') || req.path.startsWith('/platform/')) return next();
     return authenticate(req, res, next);
   });
-
-  app.use(buildRouter());
+  app.use(buildRouter((r) => routeScope(r) === 'tenant'));
 
   app.use((req, res) => {
     res.status(404).json({

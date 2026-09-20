@@ -44,6 +44,12 @@ export interface IndexDef {
   name?: string;
   columns: string[];
   unique?: boolean;
+  /**
+   * Unique indexes only. Postgres treats NULLs as distinct by default, so two
+   * rows with a null in the indexed column never collide. Set this when "no
+   * value" must still count as a duplicate. Requires Postgres 15 or newer.
+   */
+  nullsNotDistinct?: boolean;
   /** Raw SQL predicate for a partial index, e.g. `deleted_at is null`. */
   where?: string;
   method?: 'btree' | 'gin' | 'brin';

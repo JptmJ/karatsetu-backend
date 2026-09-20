@@ -347,7 +347,7 @@ async function wipeDemoData(): Promise<void> {
       'stock_movement', 'stock_balance', 'stock_piece',
       'metal_rate', 'item', 'item_category', 'purity', 'metal', 'party',
       'numbering_gap', 'numbering_series', 'config_value', 'dashboard_layout',
-      'audit_log', 'refresh_token', 'user_role', 'role', 'app_user',
+      'audit_log', 'refresh_token', 'app_user',
       'tenant_theme', 'stock_location', 'branch', 'account', 'tenant_module',
     ];
     for (const table of order) {

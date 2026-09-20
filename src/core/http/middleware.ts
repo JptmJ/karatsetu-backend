@@ -4,6 +4,7 @@ import { ZodError, type ZodType } from 'zod';
 import { runWithContext, type RequestContext } from '../context/request-context.js';
 import { AppError, ForbiddenError, UnauthorizedError, ValidationError } from '../errors/app-error.js';
 import { verifyAccessToken } from '../../modules/identity/auth.service.js';
+import { verifyPlatformToken } from '../../modules/platform/platform-auth.service.js';
 import { hasPermission } from '../../modules/identity/permissions.js';
 import { logger } from '../util/logger.js';
 import { isProduction } from '../config/env.js';
@@ -165,4 +166,49 @@ export function param(req: Request, name: string): string {
     throw new ValidationError(`Missing "${name}" in the URL.`);
   }
   return value;
+}
+
+/**
+ * Authenticates a platform operator (super admin / support).
+ *
+ * Deliberately a different middleware from `authenticate`: a platform token has
+ * no tenant, carries `scope: 'platform'`, and is signed with a different issuer.
+ * Keeping them apart means a tenant token can never satisfy a platform route,
+ * which is the one mistake in this area that would really matter.
+ */
+export const authenticatePlatform: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    return next(new UnauthorizedError('Sign in to continue.'));
+  }
+
+  let claims;
+  try {
+    claims = verifyPlatformToken(header.slice(7));
+  } catch (error) {
+    return next(error);
+  }
+
+  const context: RequestContext = {
+    requestId: (req as Request & { requestId: string }).requestId ?? randomUUID(),
+    // Platform work crosses tenants by definition; the sentinel keeps the
+    // transaction helper happy while `bypassRls` does the real work.
+    tenantId: '00000000-0000-0000-0000-000000000000',
+    userId: null,
+    branchId: null,
+    roles: [claims.role],
+    permissions: new Set(claims.permissions ?? []),
+    bypassRls: true,
+  };
+
+  req.ctx = context;
+  (req as Request & { platformUserId?: string }).platformUserId = claims.sub;
+  runWithContext(context, () => next());
+};
+
+/** The signed-in platform operator's id. Throws if called off a platform route. */
+export function platformUserId(req: Request): string {
+  const id = (req as Request & { platformUserId?: string }).platformUserId;
+  if (!id) throw new UnauthorizedError('This route requires a platform operator.');
+  return id;
 }

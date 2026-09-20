@@ -137,3 +137,5 @@ No migration files. The database is brought in line with the code on boot.
 
 Send `Authorization: Bearer <token>`, and optionally `X-Branch-Id` to act at a
 specific branch.
+
+npm run seed:superadmin -- --email=admin@ratnagrid.com --password='Admin@123456789' --name='SAdmin'

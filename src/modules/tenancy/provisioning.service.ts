@@ -12,7 +12,7 @@ import { newId } from '../../core/util/id.js';
 import { logger } from '../../core/util/logger.js';
 import { DEFAULT_ACCOUNTS } from '../accounts/accounts.schema.js';
 import { DEFAULT_SERIES } from '../numbering/numbering.service.js';
-import { SYSTEM_ROLES } from '../identity/permissions.js';
+import { ADMIN_ROLE } from '../platform/roles.js';
 import { hashPassword } from '../identity/auth.service.js';
 import { MODULE_CATALOG, type TenantKind } from './module-catalog.js';
 
@@ -199,30 +199,24 @@ async function createMetalsAndPurities(tx: Tx): Promise<void> {
   }
 }
 
-async function createOwner(tx: Tx, input: ProvisionInput, branchId: string): Promise<string> {
-  const roleIds = new Map<string, string>();
-  for (const role of SYSTEM_ROLES) {
-    const roleId = newId();
-    await tx.query(
-      `insert into role (id, tenant_id, code, name, description, is_system, permissions)
-       values ($1, $2, $3, $4, $5, true, $6::jsonb)`,
-      [roleId, tx.context.tenantId, role.code, role.name, role.description, JSON.stringify(role.permissions)],
-    );
-    roleIds.set(role.code, roleId);
-  }
-
+/**
+ * The business's first admin.
+ *
+ * Created with no branch, which is the all-branches slot — a new shop usually
+ * has one person running everything, and the super admin can move them to a
+ * single branch later once there are several.
+ *
+ * No roles are seeded any more: the four roles live in code and the role sits
+ * on the user row.
+ */
+async function createOwner(tx: Tx, input: ProvisionInput, _branchId: string): Promise<string> {
   const userId = newId();
   await tx.query(
-    `insert into app_user (id, tenant_id, email, full_name, password_hash, default_branch_id, is_active)
-     values ($1, $2, $3, $4, $5, $6, true)`,
+    `insert into app_user
+       (id, tenant_id, email, full_name, password_hash, role_code, default_branch_id, is_active)
+     values ($1, $2, $3, $4, $5, $6, null, true)`,
     [userId, tx.context.tenantId, input.owner.email.toLowerCase(), input.owner.fullName,
-     await hashPassword(input.owner.password), branchId],
+     await hashPassword(input.owner.password), ADMIN_ROLE],
   );
-
-  await tx.query(
-    `insert into user_role (id, tenant_id, user_id, role_id) values ($1, $2, $3, $4)`,
-    [newId(), tx.context.tenantId, userId, roleIds.get('owner')],
-  );
-
   return userId;
 }

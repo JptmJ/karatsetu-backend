@@ -5,7 +5,7 @@
  * into the frontend. Every type here comes from the schema that validates the
  * real request, so a mismatch between this file and the server is impossible.
  *
- * Generated 2026-09-18T08:50:41.385Z from 106 endpoints.
+ * Generated 2026-09-20T10:47:34.332Z from 122 endpoints.
  */
 
 export interface ApiError {
@@ -2270,14 +2270,159 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/accounts/karigar-ledger", { query });
     },
     /**
-     * Tenant directory
+     * The four roles and what each can do
      *
-     * Platform operators only. Crosses tenant boundaries deliberately.
+     * Reference only. Roles are fixed in code and assigned by the super admin — there is no endpoint here to assign one.
+     * `GET /api/settings/roles`
+     * Requires `settings.users.view`.
+     */
+    getSettingsRoles(): Promise<{
+      roles: Array<Record<string, unknown>>;
+      /** Always empty — tenants do not assign roles. */
+      assignable: Array<string>;
+    }> {
+      return request<{
+      roles: Array<Record<string, unknown>>;
+      /** Always empty — tenants do not assign roles. */
+      assignable: Array<string>;
+    }>('GET', "/api/settings/roles");
+    },
+    /**
+     * Who works in this business
+     *
+     * Read-only. Ask the super admin to add or change anyone.
+     * `GET /api/settings/users`
+     * Requires `settings.users.view`.
+     */
+    getSettingsUsers(query?: {
+      search?: string;
+      role?: "admin" | "sales" | "accountant" | "storekeeper";
+      isActive?: boolean;
+      branchId?: string;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/settings/users", { query });
+    },
+    /**
+     * Super admin sign-in
+     *
+     * No tenant code — platform operators do not belong to a tenant. The token returned is a *platform* token and is rejected by every tenant route, and vice versa.
+     * `POST /api/platform/auth/login`
+     */
+    postPlatformAuthLogin(body: {
+      email: string;
+      password: string;
+    }): Promise<{
+      accessToken: string;
+      refreshToken: string;
+      user: {
+        id: string;
+        email: string;
+        fullName: string;
+        role: string;
+        roleName: string;
+      };
+      permissions: Array<string>;
+    }> {
+      return request<{
+      accessToken: string;
+      refreshToken: string;
+      user: {
+        id: string;
+        email: string;
+        fullName: string;
+        role: string;
+        roleName: string;
+      };
+      permissions: Array<string>;
+    }>('POST', "/api/platform/auth/login", { body });
+    },
+    /**
+     * Refresh a platform session
+     *
+     * `POST /api/platform/auth/refresh`
+     */
+    postPlatformAuthRefresh(body: {
+      refreshToken: string;
+    }): Promise<{
+      accessToken: string;
+    }> {
+      return request<{
+      accessToken: string;
+    }>('POST', "/api/platform/auth/refresh", { body });
+    },
+    /**
+     * Revoke a platform refresh token
+     *
+     * `POST /api/platform/auth/logout`
+     */
+    postPlatformAuthLogout(body: {
+      refreshToken: string;
+    }): Promise<void> {
+      return request<void>('POST', "/api/platform/auth/logout", { body });
+    },
+    /**
+     * The fixed role set
+     *
+     * Four roles, fixed in code. Only you assign them — nobody inside a jewellery business can create or change a user. `isBranchAdmin` marks the role that is limited to one holder per branch.
+     * `GET /api/platform/roles`
+     */
+    getPlatformRoles(): Promise<{
+      platform: {
+        code: string;
+        name: string;
+        description: string;
+      };
+      tenant: Array<{
+        code: string;
+        name: string;
+        description: string;
+        isBranchAdmin: boolean;
+        permissions: Array<string>;
+      }>;
+    }> {
+      return request<{
+      platform: {
+        code: string;
+        name: string;
+        description: string;
+      };
+      tenant: Array<{
+        code: string;
+        name: string;
+        description: string;
+        isBranchAdmin: boolean;
+        permissions: Array<string>;
+      }>;
+    }>('GET', "/api/platform/roles");
+    },
+    /**
+     * The module catalog, for provisioning
+     *
+     * `GET /api/platform/modules`
+     * Requires `platform.tenants.view`.
+     */
+    getPlatformModules(): Promise<{
+      modules: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      modules: Array<Record<string, unknown>>;
+    }>('GET', "/api/platform/modules");
+    },
+    /**
+     * List every tenant
+     *
      * `GET /api/platform/tenants`
      * Requires `platform.tenants.view`.
      */
     getPlatformTenants(query?: {
       status?: "trial" | "active" | "suspended" | "closed";
+      kind?: "manufacturer" | "retailer" | "both";
+      /** Matches code or name. */
+      search?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -2294,9 +2439,209 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/platform/tenants", { query });
     },
     /**
+     * Create a tenant with its Admin and first branch
+     *
+     * One call sets up everything a business needs to start: the tenant, its chart of accounts, purities, numbering series, the five roles, the head user (Admin) and the first branch with its stock locations. A half-created tenant is worse than none, so this does the lot.
+     * `POST /api/platform/tenants`
+     * Requires `platform.tenants.create`.
+     */
+    postPlatformTenants(body: {
+      /** Used at sign-in and in URLs. Cannot be changed later. */
+      code: string;
+      legalName: string;
+      displayName?: string;
+      /** Decides which modules the tenant can see at all. */
+      kind?: "manufacturer" | "retailer" | "both";
+      gstin?: string;
+      pan?: string;
+      /** GST state code — decides CGST+SGST vs IGST. */
+      stateCode?: string;
+      /** The head user. Gets the Admin role and can then create all other staff. */
+      admin: {
+        email: string;
+        fullName: string;
+        /** At least 8 characters. */
+        password: string;
+        phone?: string;
+      };
+      /** Omit to get a default "MAIN" branch. */
+      branch?: {
+        code: string;
+        name: string;
+        kind?: "showroom" | "factory" | "warehouse" | "office";
+        city?: string;
+        state?: string;
+        stateCode?: string;
+      };
+      /** Omit to use each module’s default licence. */
+      modules?: Array<{
+        key: string;
+        licence: "included" | "purchased" | "trial";
+        trialDays?: number;
+      }>;
+    }): Promise<{
+      tenantId: string;
+      branchId: string;
+      adminUserId: string;
+    }> {
+      return request<{
+      tenantId: string;
+      branchId: string;
+      adminUserId: string;
+    }>('POST', "/api/platform/tenants", { body });
+    },
+    /**
+     * One tenant with its branches, users and module licences
+     *
+     * `GET /api/platform/tenants/:id`
+     * Requires `platform.tenants.view`.
+     */
+    getPlatformTenantsById(params: { id: string }): Promise<{
+      tenant: Record<string, unknown>;
+      branches: Array<Record<string, unknown>>;
+      users: Array<Record<string, unknown>>;
+      modules: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      tenant: Record<string, unknown>;
+      branches: Array<Record<string, unknown>>;
+      users: Array<Record<string, unknown>>;
+      modules: Array<Record<string, unknown>>;
+    }>('GET', `/api/platform/tenants/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Update a tenant
+     *
+     * Setting `status` to `suspended` blocks every user of that tenant from signing in.
+     * `PATCH /api/platform/tenants/:id`
+     * Requires `platform.tenants.update`.
+     */
+    patchPlatformTenantsById(params: { id: string }, body: {
+      displayName?: string;
+      legalName?: string;
+      status?: "trial" | "active" | "suspended" | "closed";
+      kind?: "manufacturer" | "retailer" | "both";
+      gstin?: string;
+      pan?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/platform/tenants/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Add a branch to a tenant
+     *
+     * Creates the branch together with its stock locations and its own document numbering series — without those the first invoice at that branch would fail.
+     * `POST /api/platform/tenants/:id/branches`
+     * Requires `platform.tenants.update`.
+     */
+    postPlatformTenantsByIdBranches(params: { id: string }, body: {
+      code: string;
+      name: string;
+      kind?: "showroom" | "factory" | "warehouse" | "office";
+      gstin?: string;
+      stateCode?: string;
+      city?: string;
+      state?: string;
+      address_line1?: string;
+      pincode?: string;
+      phone?: string;
+      email?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/platform/tenants/${encodeURIComponent(params.id)}/branches`, { body });
+    },
+    /**
+     * Create a user inside a tenant
+     *
+     * Only you can do this — nobody inside the business can create users. Give `branchId` to place the person at one branch; leave it out and they cover all branches. A branch has exactly one admin, so creating a second one for the same branch is refused with `409` naming whoever already holds the slot.
+     * `POST /api/platform/tenants/:id/users`
+     * Requires `platform.tenants.update`.
+     */
+    postPlatformTenantsByIdUsers(params: { id: string }, body: {
+      email: string;
+      fullName: string;
+      password: string;
+      role: "admin" | "sales" | "accountant" | "storekeeper";
+      phone?: string;
+      /** Their branch. Omit to cover all branches. */
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/platform/tenants/${encodeURIComponent(params.id)}/users`, { body });
+    },
+    /**
+     * Change a user’s role, branch or activation
+     *
+     * Moving someone to `admin`, or moving an existing admin to another branch, is refused if that branch already has one. The only admin in a business cannot be deactivated — the shop would be left with nobody able to run it.
+     * `PATCH /api/platform/tenants/:id/users/:userId`
+     * Requires `platform.tenants.update`.
+     */
+    patchPlatformTenantsByIdUsersByUserId(params: { id: string; userId: string }, body: {
+      role?: "admin" | "sales" | "accountant" | "storekeeper";
+      /** Null moves them to all branches. */
+      branchId?: string | null;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/platform/tenants/${encodeURIComponent(params.id)}/users/${encodeURIComponent(params.userId)}`, { body });
+    },
+    /**
+     * The signed-in super admin
+     *
+     * There is exactly one super admin and it is seeded from the command line — there is no endpoint to create another.
+     * `GET /api/platform/me`
+     */
+    getPlatformMe(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/platform/me");
+    },
+    /**
+     * Platform audit log
+     *
+     * Every super-admin action, newest first.
+     * `GET /api/platform/audit`
+     * Requires `platform.tenants.view`.
+     */
+    getPlatformAudit(query?: {
+      tenantId?: string;
+      action?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/platform/audit", { query });
+    },
+    /**
+     * Platform-wide counts for the super admin dashboard
+     *
+     * `GET /api/platform/stats`
+     * Requires `platform.tenants.view`.
+     */
+    getPlatformStats(): Promise<{
+      tenants: {
+        total: number;
+        active: number;
+        trial: number;
+        suspended: number;
+      };
+      users: number;
+      branches: number;
+      operators: number;
+    }> {
+      return request<{
+      tenants: {
+        total: number;
+        active: number;
+        trial: number;
+        suspended: number;
+      };
+      users: number;
+      branches: number;
+      operators: number;
+    }>('GET', "/api/platform/stats");
+    },
+    /**
      * Change a tenant’s module entitlement
      *
-     * Grant, revoke, or move a module between included / purchased / trial. This is the licensing controller.
+     * Grant, revoke, or move a module between included / purchased / trial. A module whose trial or term has lapsed still appears in the tenant’s dock, but locked — so they can see what they are missing rather than having it silently vanish.
      * `PUT /api/platform/tenants/:id/modules/:moduleKey`
      * Requires `platform.entitlement.update`.
      */
@@ -2305,6 +2650,7 @@ export function createClient(options: ClientOptions) {
       licence?: "included" | "purchased" | "trial" | "expired";
       trialEndsAt?: string | null;
       expiresAt?: string | null;
+      /** Sub-module keys to hide, e.g. ["orders.repair"]. */
       disabledSubmodules?: Array<string>;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PUT', `/api/platform/tenants/${encodeURIComponent(params.id)}/modules/${encodeURIComponent(params.moduleKey)}`, { body });
@@ -2312,7 +2658,7 @@ export function createClient(options: ClientOptions) {
     /**
      * Start a support impersonation session
      *
-     * Time-boxed access into one tenant for support. Read-only unless `canWrite` is set. Every action during the window is tagged with the session id, so “support looked at my data” is always answerable with exactly what and when.
+     * Time-boxed access into one tenant. Read-only unless `canWrite` is set, and every action during the window is written to the platform audit log — so “who looked at my data” is always answerable with exactly what and when.
      * `POST /api/platform/support-sessions`
      * Requires `platform.support.create`.
      */
@@ -2334,7 +2680,7 @@ export function createClient(options: ClientOptions) {
     /**
      * Feature flags in effect
      *
-     * Global defaults, overridden per tenant where a tenant row exists.
+     * Rows with a null tenant are global defaults; a tenant row overrides the default for that tenant.
      * `GET /api/platform/feature-flags`
      * Requires `platform.flags.view`.
      */
