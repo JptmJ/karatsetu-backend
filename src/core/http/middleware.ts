@@ -9,6 +9,8 @@ import { hasPermission } from '../../modules/identity/permissions.js';
 import { logger } from '../util/logger.js';
 import { isProduction } from '../config/env.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 declare module 'express-serve-static-core' {
   interface Request {
     ctx?: RequestContext;
@@ -35,8 +37,23 @@ export const authenticate: RequestHandler = (req, res, next) => {
 
   const claims = verifyAccessToken(header.slice(7));
 
-  // A branch may be switched per request, but only to one the token allows.
-  const requestedBranch = req.headers['x-branch-id'] as string | undefined;
+  /*
+   * A branch may be switched per request via X-Branch-Id.
+   *
+   * A blank header means "no branch", not "the branch whose id is empty" —
+   * API clients send an empty header whenever the variable behind it is unset,
+   * and letting that through reached the database as an invalid uuid and came
+   * back as a 500. A malformed value is a client mistake, so it gets a 400 that
+   * says what is wrong.
+   */
+  const rawBranch = (req.headers['x-branch-id'] as string | undefined)?.trim();
+  let requestedBranch: string | undefined;
+  if (rawBranch) {
+    if (!UUID_RE.test(rawBranch)) {
+      return next(new ValidationError('X-Branch-Id must be a branch UUID, or left off entirely.'));
+    }
+    requestedBranch = rawBranch;
+  }
 
   const context: RequestContext = {
     requestId: (req as Request & { requestId: string }).requestId ?? randomUUID(),

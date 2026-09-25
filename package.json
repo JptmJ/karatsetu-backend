@@ -18,7 +18,8 @@
     "gen:client": "tsx src/cli/generate-client.ts",
     "gen:docs": "tsx src/cli/generate-docs.ts",
     "migrate:roles": "tsx src/cli/migrate-roles.ts",
-    "seed:superadmin": "tsx src/cli/seed-superadmin.ts"
+    "seed:superadmin": "tsx src/cli/seed-superadmin.ts",
+    "gen:postman": "tsx src/cli/generate-postman.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
