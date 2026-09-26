@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineRoute } from '../core/http/route-registry.js';
 import { transaction } from '../core/db/client.js';
 import { repo } from '../core/db/repository.js';
-import { login, refreshSession, revokeRefreshToken } from '../modules/identity/auth.service.js';
+import { changeOwnPassword, login, refreshSession, revokeRefreshToken } from '../modules/identity/auth.service.js';
 import { catalogFor, LICENCE_STATES, MODULE_CATALOG, type LicenceState, type TenantKind, type TenantModuleState } from '../modules/tenancy/module-catalog.js';
 import { describeConfig, setConfig } from '../core/config/config-service.js';
 import { errorEnvelope, idParam, ok, record, uuid } from './schemas.js';
@@ -14,49 +14,92 @@ const TODAY = '2026-09-18';
 /* ------------------------------------------------------------------ auth */
 
 defineRoute({
-  method: 'post', path: '/api/auth/login', module: 'settings', auth: false,
+  method: 'post', path: '/api/auth/login', module: 'identity', auth: false,
   summary: 'Sign in and receive tokens',
   description:
     'Returns a short-lived access token plus a long-lived refresh token. Send the access token as `Authorization: Bearer <token>` on every other call. The same message is returned for a wrong email and a wrong password, so the response cannot be used to discover which accounts exist.',
   body: z.object({
     tenantCode: z.string().min(1).describe('The tenant slug, e.g. "aarohi".'),
-    email: z.string().email(),
+    identifier: z.string().min(3).describe('Email address or mobile number.'),
     password: z.string().min(1),
   }),
   responses: [
     { status: 200, description: 'Signed in.', schema: z.object({
         accessToken: z.string(), refreshToken: z.string(),
-        user: z.object({ id: uuid, email: z.string(), fullName: z.string(), branchId: uuid.nullable() }),
+        user: z.object({ id: uuid, email: z.string().nullable(), phone: z.string().nullable(), fullName: z.string(), branchId: uuid.nullable(), mustChangePassword: z.boolean() }),
+        branches: z.array(z.object({ id: uuid, code: z.string(), name: z.string() })),
         tenant: z.object({ id: uuid, code: z.string(), name: z.string(), kind: z.string() }),
         roles: z.array(z.string()), permissions: z.array(z.string()),
       }) },
     { status: 401, description: 'Wrong credentials, locked account, or inactive tenant.', schema: errorEnvelope },
   ],
-  changelog: [{ date: TODAY, kind: 'added', note: 'Initial sign-in endpoint.' }],
-  handler: async (req) => login(req.body.tenantCode, req.body.email, req.body.password, {
+  changelog: [
+    { date: '2026-09-26', kind: 'changed', note: 'Sign in with email or mobile; returns accessible branches. Permissions resolved from tenant roles.' },
+    { date: TODAY, kind: 'added', note: 'Initial sign-in endpoint.' },
+  ],
+  handler: async (req) => login(req.body.tenantCode, req.body.identifier, req.body.password, {
     userAgent: req.headers['user-agent'], ip: req.ip,
   }),
 });
 
 defineRoute({
-  method: 'post', path: '/api/auth/refresh', module: 'settings', auth: false,
+  method: 'post', path: '/api/auth/refresh', module: 'identity', auth: false,
   summary: 'Exchange a refresh token for a new access token',
   body: z.object({ refreshToken: z.string().min(1) }),
   responses: [
-    { status: 200, description: 'New access token.', schema: z.object({ accessToken: z.string() }) },
+    { status: 200, description: 'New access token and a rotated refresh token. The old refresh token is now invalid.', schema: z.object({ accessToken: z.string(), refreshToken: z.string() }) },
     { status: 401, description: 'Refresh token expired or revoked — sign in again.', schema: errorEnvelope },
   ],
-  changelog: [{ date: TODAY, kind: 'added', note: 'Initial refresh endpoint.' }],
-  handler: async (req) => refreshSession(req.body.refreshToken),
+  changelog: [
+    { date: '2026-09-26', kind: 'changed', note: 'Refresh tokens now rotate; reuse of an old token revokes the session.' },
+    { date: TODAY, kind: 'added', note: 'Initial refresh endpoint.' },
+  ],
+  handler: async (req) => refreshSession(req.body.refreshToken, { userAgent: req.headers['user-agent'], ip: req.ip }),
 });
 
 defineRoute({
-  method: 'post', path: '/api/auth/logout', module: 'settings', auth: false,
+  method: 'post', path: '/api/auth/logout', module: 'identity', auth: false,
   summary: 'Revoke a refresh token',
   body: z.object({ refreshToken: z.string().min(1) }),
   responses: [{ status: 204, description: 'Revoked.' }],
   changelog: [{ date: TODAY, kind: 'added', note: 'Initial logout endpoint.' }],
   handler: async (req, res) => { await revokeRefreshToken(req.body.refreshToken); res.status(204).end(); },
+});
+
+defineRoute({
+  method: 'post', path: '/api/me/password', module: 'identity',
+  summary: 'Change your own password',
+  description: 'Signs out every other device and returns a fresh session for this one.',
+  body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(128) }),
+  responses: [
+    { status: 200, description: 'Changed.', schema: z.object({ accessToken: z.string(), refreshToken: z.string() }) },
+    { status: 400, description: 'Current password is wrong, or the new one is the same.', schema: errorEnvelope },
+  ],
+  changelog: [{ date: '2026-09-26', kind: 'added', note: 'Self-service password change; required when mustChangePassword is true.' }],
+  handler: async (req) => changeOwnPassword(req.body.currentPassword, req.body.newPassword, {
+    userAgent: req.headers['user-agent'], ip: req.ip,
+  }),
+});
+
+defineRoute({
+  method: 'get', path: '/api/me', module: 'identity',
+  summary: 'Current user, active branch, and what they can do there',
+  description: 'Send `x-branch-id` to ask about a specific branch. Call this after switching branch to refresh the UI permissions.',
+  responses: [
+    { status: 200, description: 'Access for the active branch.', schema: z.object({
+        userId: uuid, branchId: uuid.nullable(),
+        branches: z.array(z.object({ id: uuid, code: z.string(), name: z.string() })),
+        roles: z.array(z.string()), permissions: z.array(z.string()),
+        mustChangePassword: z.boolean(),
+      }) },
+    { status: 403, description: 'The requested branch is not assigned to this user.', schema: errorEnvelope },
+  ],
+  changelog: [{ date: '2026-09-26', kind: 'added', note: 'Branch-aware access endpoint.' }],
+  handler: async (req) => ({
+    userId: req.ctx!.userId, branchId: req.ctx!.branchId, branches: req.accessInfo!.branches,
+    roles: req.ctx!.roles, permissions: [...req.ctx!.permissions],
+    mustChangePassword: req.accessInfo!.mustChangePassword,
+  }),
 });
 
 /* -------------------------------------------------------------- tenancy */

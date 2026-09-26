@@ -5,20 +5,21 @@
  *                  ──creates──► its branches
  *                  ──creates──► every user in every branch
  *
- * Nobody inside a tenant creates users, not even the branch admin. So there is
- * no rank ladder here — there is one person who hands out accounts, and the
- * only structural rule left is that a branch has exactly one admin.
+ * All tenant mutations run with the correct tenant context so repo() and RLS
+ * stamp the proper tenant_id.
  */
 import type { Tx } from '../../core/db/client.js';
-import { asPlatform, asTenant } from '../../core/db/client.js';
+import { asPlatform, asTenant, withTenant } from '../../core/db/client.js';
 import { repo } from '../../core/db/repository.js';
-import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../../core/errors/app-error.js';
+import { ConflictError, NotFoundError, ValidationError } from '../../core/errors/app-error.js';
 import { newId } from '../../core/util/id.js';
 import { logger } from '../../core/util/logger.js';
-import { hashPassword } from '../identity/auth.service.js';
+import { hashPassword, normalizePhone } from '../identity/auth.service.js';
+import { invalidateUserAccess } from '../identity/access.service.js';
+import { seedSystemRoles } from '../identity/role-seed.js';
 import { provisionTenant } from '../tenancy/provisioning.service.js';
 import { MODULE_CATALOG, type TenantKind } from '../tenancy/module-catalog.js';
-import { ADMIN_ROLE, TENANT_ROLES, isAdminRole, tenantRole, type TenantRoleCode } from './roles.js';
+import { TENANT_ROLES, tenantRole, type TenantRoleCode } from './roles.js';
 import { audit } from './platform-auth.service.js';
 
 export interface CreateTenantInput {
@@ -29,11 +30,8 @@ export interface CreateTenantInput {
   gstin?: string;
   pan?: string;
   stateCode?: string;
-  /**
-   * The first branch admin. Left with `branchId` unset, they administer every
-   * branch — which is the "one admin for all branches" shape.
-   */
-  admin: { email: string; fullName: string; password: string; phone?: string };
+  /** The first branch admin/owner. */
+  admin: { email?: string | null; fullName: string; password: string; phone?: string | null };
   /** The first branch. More can be added afterwards. */
   branch?: { code: string; name: string; city?: string; state?: string; stateCode?: string; kind?: 'showroom' | 'factory' | 'warehouse' | 'office' };
   /** Module keys to switch on. Omit to use each module's default licence. */
@@ -41,10 +39,8 @@ export interface CreateTenantInput {
 }
 
 /**
- * Creates the tenant, its chart of accounts, purities, numbering, the five
- * roles, the head user and the first branch — in one transaction per stage.
- * A half-created tenant is worse than none, so everything the tenant needs to
- * function is in place before this returns.
+ * Creates the tenant, its chart of accounts, purities, numbering, roles,
+ * the owner user and the first branch in one platform transaction.
  */
 export async function createTenant(input: CreateTenantInput, actorId: string, ip?: string) {
   if (!/^[a-z0-9][a-z0-9-]{1,29}$/.test(input.code)) {
@@ -54,63 +50,73 @@ export async function createTenant(input: CreateTenantInput, actorId: string, ip
     throw new ValidationError('The admin password must be at least 8 characters.');
   }
 
-  const taken = await asPlatform(async (tx) =>
-    tx.maybeOne<{ id: string }>(`select id from tenant where lower(code) = lower($1)`, [input.code]),
-  );
-  if (taken) throw new ConflictError(`A tenant with code "${input.code}" already exists.`);
+  return asPlatform(async (tx) => {
+    const taken = await tx.maybeOne<{ id: string }>(`select id from tenant where lower(code) = lower($1)`, [input.code]);
+    if (taken) throw new ConflictError(`A tenant with code "${input.code}" already exists.`);
 
-  const { tenantId, branchId, ownerUserId } = await provisionTenant({
-    code: input.code,
-    legalName: input.legalName,
-    displayName: input.displayName ?? input.legalName,
-    kind: input.kind,
-    gstin: input.gstin,
-    stateCode: input.stateCode,
-    owner: { email: input.admin.email, fullName: input.admin.fullName, password: input.admin.password },
-    firstBranch: input.branch
-      ? { code: input.branch.code, name: input.branch.name, kind: input.branch.kind }
-      : undefined,
-  });
+    const tenant = await repo<{ id: string }>(tx, 'tenant').insert({
+      code: input.code,
+      legal_name: input.legalName,
+      display_name: input.displayName ?? input.legalName,
+      kind: input.kind,
+      status: 'active',
+      gstin: input.gstin ?? null,
+      pan: input.pan ?? null,
+    });
 
-  await asTenant(tenantId, async (tx) => {
-    // provisionTenant creates the head user; make sure they carry the admin
-    // role and the all-branches slot.
-    await tx.query(
-      `update app_user set role_code = $2, default_branch_id = null where id = $1`,
-      [ownerUserId, ADMIN_ROLE]);
-    if (input.pan) await tx.query(`update tenant set pan = $2 where id = $1`, [tenantId, input.pan]);
-    if (input.admin.phone) {
-      await tx.query(`update app_user set phone = $2 where id = $1`, [ownerUserId, input.admin.phone]);
-    }
-    if (input.branch) {
-      await tx.query(
-        `update branch set city = $2, state = $3, state_code = coalesce($4, state_code) where id = $1`,
-        [branchId, input.branch.city ?? null, input.branch.state ?? null, input.branch.stateCode ?? null],
-      );
-    }
-    if (input.modules?.length) {
-      for (const m of input.modules) {
-        const trialEnds = m.licence === 'trial'
-          ? new Date(Date.now() + (m.trialDays ?? 30) * 86_400_000)
-          : null;
-        await tx.query(
-          `update tenant_module set licence = $2, trial_ends_at = $3, enabled = true, updated_at = now()
-            where module_key = $1`,
-          [m.key, m.licence, trialEnds],
+    let branchId = '';
+    let ownerUserId = '';
+
+    // 2–3. Everything inside the tenant is written AS the tenant, on this same
+    // transaction, so repo() and RLS stamp the right tenant_id.
+    await withTenant(tx, tenant.id as string, async (ttx) => {
+      const prov = await provisionTenant(ttx, tenant.id as string, {
+        legalName: input.legalName,
+        displayName: input.displayName,
+        stateCode: input.stateCode,
+        firstBranch: input.branch ? { code: input.branch.code, name: input.branch.name, kind: input.branch.kind } : undefined,
+      });
+      branchId = prov.branchId;
+      await seedSystemRoles(ttx);
+      if (input.admin) {
+        const owner = await createUserInternal(ttx, {
+          email: input.admin.email,
+          fullName: input.admin.fullName,
+          password: input.admin.password,
+          phone: input.admin.phone,
+          roleCode: 'owner',
+          branchId: null,
+        });
+        ownerUserId = owner.id;
+      }
+      if (input.branch) {
+        await ttx.query(
+          `update branch set city = $2, state = $3, state_code = coalesce($4, state_code) where id = $1`,
+          [branchId, input.branch.city ?? null, input.branch.state ?? null, input.branch.stateCode ?? null],
         );
       }
-    }
-  });
+      if (input.modules?.length) {
+        for (const m of input.modules) {
+          const trialEnds = m.licence === 'trial'
+            ? new Date(Date.now() + (m.trialDays ?? 30) * 86_400_000)
+            : null;
+          await ttx.query(
+            `update tenant_module set licence = $2, trial_ends_at = $3, enabled = true, updated_at = now()
+              where module_key = $1`,
+            [m.key, m.licence, trialEnds],
+          );
+        }
+      }
+    });
 
-  await asPlatform(async (tx) => {
     await audit(tx, actorId, 'tenant.create', {
-      tenantId, targetType: 'tenant', targetId: tenantId, ip,
+      tenantId: tenant.id, targetType: 'tenant', targetId: tenant.id, ip,
       changes: { code: input.code, kind: input.kind, adminEmail: input.admin.email },
     });
-  });
 
-  logger.info({ tenantId, code: input.code, actorId }, 'Tenant created by super admin');
-  return { tenantId, branchId, adminUserId: ownerUserId };
+    logger.info({ tenantId: tenant.id, code: input.code, actorId }, 'Tenant created by super admin');
+    return { tenantId: tenant.id, branchId, adminUserId: ownerUserId };
+  });
 }
 
 export async function updateTenant(
@@ -209,168 +215,105 @@ export async function createBranch(tenantId: string, input: CreateBranchInput, a
 }
 
 export interface CreateUserInput {
-  email: string;
+  email?: string | null;
+  phone?: string | null;
   fullName: string;
   password: string;
-  role: TenantRoleCode;
-  phone?: string;
-  branchId?: string;
+  roleCode: string;
+  branchId?: string | null;
+}
+
+/** Runs on a tenant-scoped tx (see withTenant) — repo() stamps tenant_id. */
+async function createUserInternal(tx: Tx, input: CreateUserInput) {
+  const role = await tx.maybeOne<{ id: string }>(
+    `select id from role where code = $1 and deleted_at is null`, [input.roleCode],
+  );
+  if (!role) throw new ValidationError(`Role "${input.roleCode}" does not exist for this business.`);
+
+  const user = await repo<{ id: string }>(tx, 'app_user').insert({
+    email: input.email?.trim().toLowerCase() || null,
+    phone: input.phone?.trim() ? normalizePhone(input.phone) : null,
+    full_name: input.fullName.trim(),
+    password_hash: await hashPassword(input.password),
+    default_branch_id: input.branchId ?? null,
+    must_change_password: true,
+    is_active: true,
+  });
+  await repo(tx, 'user_role').insert({ user_id: user.id, role_id: role.id, branch_id: input.branchId ?? null });
+  return user;
 }
 
 /**
- * Creates a staff member inside a tenant.
- *
- * `actorRoles` is the caller's own roles. Passing `['owner']` is what the super
- * admin does (it may hand out any role); a manager passes its real roles and is
- * therefore limited to the roles below it.
+ * Creates a staff member inside a tenant via platform transaction.
  */
 export async function createTenantUser(
   tenantId: string,
   input: CreateUserInput,
-  options: { actorPlatformUserId?: string; actorUserId?: string; ip?: string } = {},
+  options: { actorPlatformUserId?: string; ip?: string } = {},
 ) {
   if (input.password.length < 8) throw new ValidationError('Password must be at least 8 characters.');
 
-  const role = tenantRole(input.role);
-  if (!role) {
-    throw new ValidationError(`Unknown role "${input.role}". Valid roles: ${TENANT_ROLES.map((r) => r.code).join(', ')}.`);
-  }
-
-  const user = await asTenant(tenantId, async (tx) => {
-    const clash = await tx.maybeOne<{ id: string }>(
-      `select id from app_user where lower(email) = lower($1) and deleted_at is null`, [input.email]);
-    if (clash) throw new ConflictError(`A user with email "${input.email}" already exists in this business.`);
-
-    // The unique index would catch this anyway, but a duplicate-key error is
-    // not something to show a person. Checking first lets us name the admin
-    // already holding the slot.
-    if (isAdminRole(input.role)) await assertBranchHasNoAdmin(tx, input.branchId ?? null);
-
-    return repo<{ id: string; email: string; full_name: string }>(tx, 'app_user').insert({
-      email: input.email.toLowerCase(), full_name: input.fullName,
-      password_hash: await hashPassword(input.password),
-      role_code: input.role,
-      phone: input.phone ?? null, default_branch_id: input.branchId ?? null, is_active: true,
-    });
-  }, options.actorUserId ?? null);
+  const user = await asPlatform(async (tx) => {
+    return withTenant(tx, tenantId, (ttx) => createUserInternal(ttx, input));
+  });
 
   if (options.actorPlatformUserId) {
     await asPlatform(async (tx) => {
       await audit(tx, options.actorPlatformUserId!, 'user.create', {
         tenantId, targetType: 'app_user', targetId: user.id, ip: options.ip,
-        changes: { email: input.email, role: input.role },
+        changes: { email: input.email, phone: input.phone, roleCode: input.roleCode },
       });
     });
   }
 
-  return { ...user, role: input.role, roleName: role.name };
+  return user;
 }
 
 export async function setUserActive(
   tenantId: string, userId: string, isActive: boolean,
   options: { actorPlatformUserId?: string; ip?: string } = {},
 ) {
-  const user = await asTenant(tenantId, async (tx) => {
-    // Never let the last active Admin be switched off — the tenant would be
-    // locked out of its own account with nobody able to let them back in.
+  await asPlatform(async (tx) => {
+    await tx.query(
+      `update app_user set is_active = $1, token_version = token_version + 1, updated_at = now()
+        where id = $2 and tenant_id = $3`,
+      [isActive, userId, tenantId],
+    );
     if (!isActive) {
-      const others = await tx.one<{ count: string }>(
-        `select count(*)::text count from app_user
-          where role_code = $1 and is_active = true and deleted_at is null and id <> $2`,
-        [ADMIN_ROLE, userId]);
-      const target = await tx.maybeOne<{ role_code: string }>(
-        `select role_code from app_user where id = $1`, [userId]);
-
-      if (target && isAdminRole(target.role_code) && Number(others.count) === 0) {
-        throw new BusinessRuleError(
-          'This is the only admin in the business. Create another admin before deactivating this one, or the shop is left with nobody who can run it.',
-          'last_admin',
-        );
-      }
+      await tx.query(`update refresh_token set revoked_at = now() where user_id = $1 and revoked_at is null`, [userId]);
     }
-    // Someone else may have taken the branch's admin slot while this account
-    // was off, so reactivating has to be checked the same way as creating.
-    if (isActive) {
-      const target = await tx.maybeOne<{ role_code: string; default_branch_id: string | null }>(
-        `select role_code, default_branch_id from app_user where id = $1`, [userId]);
-      if (target && isAdminRole(target.role_code)) {
-        await assertBranchHasNoAdmin(tx, target.default_branch_id, userId);
-      }
-    }
-    return tx.one(`update app_user set is_active = $2, updated_at = now() where id = $1 returning *`, [userId, isActive]);
-  });
+    invalidateUserAccess(tenantId, userId);
 
-  if (options.actorPlatformUserId) {
-    await asPlatform(async (tx) => {
-      await audit(tx, options.actorPlatformUserId!, isActive ? 'user.activate' : 'user.deactivate', {
+    if (options.actorPlatformUserId) {
+      await audit(tx, options.actorPlatformUserId, isActive ? 'user.activate' : 'user.deactivate', {
         tenantId, targetType: 'app_user', targetId: userId, ip: options.ip,
       });
-    });
-  }
-  return user;
-}
-
-/**
- * A branch has exactly one admin, and one admin may instead cover every branch.
- * `branchId` null means the all-branches slot.
- */
-async function assertBranchHasNoAdmin(tx: Tx, branchId: string | null, excludeUserId?: string): Promise<void> {
-  const holder = await tx.maybeOne<{ full_name: string; email: string }>(
-    `select full_name, email from app_user
-      where role_code = $1 and is_active = true and deleted_at is null
-        and default_branch_id is not distinct from $2
-        and ($3::uuid is null or id <> $3)
-      limit 1`,
-    [ADMIN_ROLE, branchId, excludeUserId ?? null],
-  );
-  if (!holder) return;
-
-  const where = branchId ? 'this branch' : 'all branches';
-  throw new ConflictError(
-    `${holder.full_name} (${holder.email}) is already the admin for ${where}. A branch has one admin — move or deactivate them first.`,
-    { currentAdmin: holder, branchId },
-  );
-}
-
-export async function changeUserRole(
-  tenantId: string, userId: string, newRole: TenantRoleCode,
-  options: { actorPlatformUserId?: string; ip?: string; branchId?: string | null } = {},
-) {
-  const role = tenantRole(newRole);
-  if (!role) throw new ValidationError(`Unknown role "${newRole}".`);
-
-  const result = await asTenant(tenantId, async (tx) => {
-    const current = await tx.maybeOne<{ id: string; default_branch_id: string | null }>(
-      `select id, default_branch_id from app_user where id = $1 and deleted_at is null`, [userId]);
-    if (!current) throw new NotFoundError('User', userId);
-
-    const branchId = options.branchId !== undefined ? options.branchId : current.default_branch_id;
-    if (isAdminRole(newRole)) await assertBranchHasNoAdmin(tx, branchId, userId);
-
-    return tx.one(
-      `update app_user set role_code = $2, default_branch_id = $3, updated_at = now()
-        where id = $1 returning *`,
-      [userId, newRole, branchId]);
+    }
   });
-
-  if (options.actorPlatformUserId) {
-    await asPlatform(async (tx) => {
-      await audit(tx, options.actorPlatformUserId!, 'user.role_change', {
-        tenantId, targetType: 'app_user', targetId: userId, changes: { role: newRole }, ip: options.ip,
-      });
-    });
-  }
-  return result;
 }
 
-/*
- * `createPlatformUser` used to live here.
- *
- * There is exactly one super admin now, seeded by `npm run seed:superadmin`.
- * Creating operators through the API would make the one account that can reach
- * every tenant something a form could multiply, which is not a thing to leave
- * lying around.
- */
+export async function changeUserRole(tenantId: string, userId: string, newRoleCode: string, operatorId: string) {
+  return asPlatform(async (tx) => {
+    const from = await withTenant(tx, tenantId, async (ttx) => {
+      const user = await ttx.maybeOne(`select id from app_user where id = $1 and deleted_at is null for update`, [userId]);
+      if (!user) throw new NotFoundError('User', userId);
+      const role = await ttx.maybeOne<{ id: string }>(`select id from role where code = $1 and deleted_at is null`, [newRoleCode]);
+      if (!role) throw new ValidationError(`Role "${newRoleCode}" does not exist for this business.`);
+
+      const before = await ttx.query<{ code: string; branch_id: string | null }>(
+        `select r.code, ur.branch_id from user_role ur join role r on r.id = ur.role_id where ur.user_id = $1`, [userId],
+      );
+      await ttx.query(`delete from user_role where user_id = $1`, [userId]);
+      await repo(ttx, 'user_role').insert({ user_id: userId, role_id: role.id, branch_id: null });
+      await ttx.query(`update app_user set token_version = token_version + 1 where id = $1`, [userId]);
+      invalidateUserAccess(tenantId, userId);
+      return before;
+    });
+    await audit(tx, operatorId, 'user.role_change', {
+      tenantId, targetType: 'app_user', targetId: userId, changes: { from, to: newRoleCode },
+    });
+  });
+}
 
 /** Everything the super admin's tenant detail screen needs. */
 export async function tenantDetail(tenantId: string) {
@@ -382,23 +325,27 @@ export async function tenantDetail(tenantId: string) {
 
   const inner = await asTenant(tenantId, async (tx: Tx) => {
     const [branches, users, modules] = await Promise.all([
-      // Each branch carries its admin, so the panel can show at a glance which
-      // branches still have nobody running them.
       tx.query(`select b.*,
                        (select count(*) from stock_location l where l.branch_id = b.id) as location_count,
                        (select u.full_name from app_user u
-                         where u.default_branch_id = b.id and u.role_code = 'admin'
-                           and u.is_active = true and u.deleted_at is null limit 1) as admin_name,
+                         join user_role ur on ur.user_id = u.id
+                         join role r on r.id = ur.role_id
+                        where (ur.branch_id = b.id or ur.branch_id is null) and r.code in ('admin', 'owner')
+                          and u.is_active = true and u.deleted_at is null limit 1) as admin_name,
                        (select u.email from app_user u
-                         where u.default_branch_id = b.id and u.role_code = 'admin'
-                           and u.is_active = true and u.deleted_at is null limit 1) as admin_email
+                         join user_role ur on ur.user_id = u.id
+                         join role r on r.id = ur.role_id
+                        where (ur.branch_id = b.id or ur.branch_id is null) and r.code in ('admin', 'owner')
+                          and u.is_active = true and u.deleted_at is null limit 1) as admin_email
                   from branch b where b.deleted_at is null order by b.code`),
       tx.query(`select u.id, u.email, u.full_name, u.phone, u.is_active, u.last_login_at, u.created_at,
-                       u.default_branch_id, u.role_code, b.name as branch_name, b.code as branch_code
+                       u.default_branch_id,
+                       coalesce((select r.code from user_role ur join role r on r.id = ur.role_id where ur.user_id = u.id limit 1), 'sales') as role_code,
+                       b.name as branch_name, b.code as branch_code
                   from app_user u
                   left join branch b on b.id = u.default_branch_id
                  where u.deleted_at is null
-                 order by (u.role_code = 'admin') desc, b.code nulls first, u.full_name`),
+                 order by b.code nulls first, u.full_name`),
       tx.query(`select module_key, enabled, licence, trial_ends_at, expires_at from tenant_module order by module_key`),
     ]);
     return { branches, users, modules };
@@ -416,7 +363,7 @@ export async function tenantDetail(tenantId: string) {
     ...inner,
     users,
     /** The admin covering every branch, if there is one. */
-    globalAdmin: users.find((u) => u.role_code === 'admin' && u.default_branch_id === null) ?? null,
+    globalAdmin: users.find((u) => (u.role_code === 'admin' || u.role_code === 'owner') && u.default_branch_id === null) ?? null,
     modules: (inner.modules as Array<Record<string, unknown>>).map((m) => ({
       ...m,
       name: catalog.get(m.module_key as string)?.name ?? m.module_key,

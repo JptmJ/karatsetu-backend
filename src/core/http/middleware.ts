@@ -9,11 +9,14 @@ import { hasPermission } from '../../modules/identity/permissions.js';
 import { logger } from '../util/logger.js';
 import { isProduction } from '../config/env.js';
 
+import { effectiveGrants, getUserAccess, resolveBranch, type UserAccess } from '../../modules/identity/access.service.js';
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 declare module 'express-serve-static-core' {
   interface Request {
     ctx?: RequestContext;
+    accessInfo?: UserAccess;
   }
 }
 
@@ -29,43 +32,42 @@ export const requestId: RequestHandler = (req, res, next) => {
  * Reads the token, builds the request context, and runs the rest of the request
  * inside it. From here on every database call is automatically tenant-scoped.
  */
-export const authenticate: RequestHandler = (req, res, next) => {
+export const authenticate: RequestHandler = async (req, _res, next) => {
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
-    return next(new UnauthorizedError('Sign in to continue.'));
-  }
+  if (!header?.startsWith('Bearer ')) return next(new UnauthorizedError('Sign in to continue.'));
 
-  const claims = verifyAccessToken(header.slice(7));
+  try {
+    const claims = verifyAccessToken(header.slice(7));
+    const access = await getUserAccess(claims.tenantId, claims.sub, claims.tv);
 
-  /*
-   * A branch may be switched per request via X-Branch-Id.
-   *
-   * A blank header means "no branch", not "the branch whose id is empty" —
-   * API clients send an empty header whenever the variable behind it is unset,
-   * and letting that through reached the database as an invalid uuid and came
-   * back as a 500. A malformed value is a client mistake, so it gets a 400 that
-   * says what is wrong.
-   */
-  const rawBranch = (req.headers['x-branch-id'] as string | undefined)?.trim();
-  let requestedBranch: string | undefined;
-  if (rawBranch) {
-    if (!UUID_RE.test(rawBranch)) {
+    const rawBranch = (req.headers['x-branch-id'] as string | undefined)?.trim();
+    if (rawBranch && !UUID_RE.test(rawBranch)) {
       return next(new ValidationError('X-Branch-Id must be a branch UUID, or left off entirely.'));
     }
-    requestedBranch = rawBranch;
+
+    const branchId = resolveBranch(access, rawBranch);
+    const { roles, permissions } = effectiveGrants(access, branchId);
+
+    const path = req.originalUrl.split('?')[0];
+    if (access.mustChangePassword && path !== '/api/me' && path !== '/api/me/password') {
+      return next(new ForbiddenError('Please set a new password before continuing.'));
+    }
+
+    const context: RequestContext = {
+      requestId: (req as Request & { requestId: string }).requestId ?? randomUUID(),
+      tenantId: claims.tenantId,
+      userId: claims.sub,
+      branchId,
+      roles,
+      permissions: new Set(permissions),
+    };
+
+    req.ctx = context;
+    req.accessInfo = access;
+    runWithContext(context, () => next());
+  } catch (err) {
+    next(err);
   }
-
-  const context: RequestContext = {
-    requestId: (req as Request & { requestId: string }).requestId ?? randomUUID(),
-    tenantId: claims.tenantId,
-    userId: claims.sub,
-    branchId: requestedBranch ?? claims.branchId,
-    roles: claims.roles ?? [],
-    permissions: new Set(claims.permissions ?? []),
-  };
-
-  req.ctx = context;
-  runWithContext(context, () => next());
 };
 
 /** Gate a route behind a permission string, e.g. `trade.sales.create`. */

@@ -58,21 +58,26 @@ export function repo<T extends QueryResultRow = QueryResultRow>(tx: Tx, table: s
 
       // Union of keys, so callers may omit optional fields on some rows.
       const columns = [...new Set(prepared.flatMap(Object.keys))].filter((c) => c in def.columns);
-      const params: unknown[] = [];
-      const tuples = prepared.map((row) => {
-        const slots = columns.map((c) => {
-          params.push(row[c] ?? null);
-          return `$${params.length}`;
+      // Postgres caps a statement at 65,535 parameters; stay safely under it.
+      const rowsPerChunk = Math.max(1, Math.floor(60_000 / columns.length));
+      const inserted: T[] = [];
+      for (let start = 0; start < prepared.length; start += rowsPerChunk) {
+        const params: unknown[] = [];
+        const tuples = prepared.slice(start, start + rowsPerChunk).map((row) => {
+          const slots = columns.map((c) => {
+            params.push(row[c] ?? null);
+            return `$${params.length}`;
+          });
+          return `(${slots.join(', ')})`;
         });
-        return `(${slots.join(', ')})`;
-      });
-
-      return tx.query<T>(
-        `insert into ${t} (${columns.map(quoteIdent).join(', ')})
-         values ${tuples.join(', ')}
-         returning *`,
-        params,
-      );
+        inserted.push(...(await tx.query<T>(
+          `insert into ${t} (${columns.map(quoteIdent).join(', ')})
+           values ${tuples.join(', ')}
+           returning *`,
+          params,
+        )));
+      }
+      return inserted;
     },
 
     async update(id: string, values: Row): Promise<T> {

@@ -67,8 +67,6 @@ export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = '0.1.0
 
   const client = await pool.connect();
   try {
-    // Platform code touches every tenant's tables, so step outside RLS.
-    await client.query(`set local app.bypass_rls = 'on'`);
     await client.query('select pg_advisory_lock($1)', [ADVISORY_LOCK_KEY.toString()]);
 
     try {
@@ -220,7 +218,6 @@ async function applyChange(client: PoolClient, change: SchemaChange, appVersion:
 export async function planSchema(pool: Pool): Promise<SchemaChange[]> {
   const client = await pool.connect();
   try {
-    await client.query(`set local app.bypass_rls = 'on'`);
     return diffSchema(await introspect(client, env.DATABASE_SCHEMA));
   } finally {
     client.release();

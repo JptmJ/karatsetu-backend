@@ -143,3 +143,34 @@ export function asTenant<T>(tenantId: string, fn: (tx: Tx) => Promise<T>, userId
   };
   return runWithContext(context, () => transaction(fn));
 }
+
+/**
+ * Re-scopes an open PLATFORM transaction to one tenant, on the same connection.
+ * Used by provisioning, where the tenant row isn't committed yet — a separate
+ * asTenant() transaction couldn't see it. repo() and RLS both see the tenant.
+ */
+export async function withTenant<T>(tx: Tx, tenantId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  if (!tx.context.bypassRls) throw new Error('withTenant() is only for platform transactions.');
+  const id = assertUuid(tenantId, 'tenantId');
+  const context: RequestContext = { ...tx.context, tenantId: id, bypassRls: false };
+
+  await tx.raw.query(`set local app.tenant_id = '${id}'; set local app.bypass_rls = 'off';`);
+  const scoped = wrap(tx.raw, context);
+  activeTx.set(context, scoped);
+
+  let ok = false;
+  try {
+    const result = await runWithContext(context, () => fn(scoped));
+    ok = true;
+    return result;
+  } finally {
+    activeTx.delete(context);
+    // After an error the transaction is aborted and will roll back — don't mask the real error.
+    if (ok) {
+      await tx.raw.query(
+        `set local app.tenant_id = '${assertUuid(tx.context.tenantId, 'tenantId')}'; set local app.bypass_rls = 'on';`,
+      );
+    }
+  }
+}
+

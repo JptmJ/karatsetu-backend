@@ -19,7 +19,9 @@
     "gen:docs": "tsx src/cli/generate-docs.ts",
     "migrate:roles": "tsx src/cli/migrate-roles.ts",
     "seed:superadmin": "tsx src/cli/seed-superadmin.ts",
-    "gen:postman": "tsx src/cli/generate-postman.ts"
+    "gen:postman": "tsx src/cli/generate-postman.ts",
+    "db:backfill-roles": "tsx src/cli/backfill-roles.ts",
+    "routes:audit": "tsx src/cli/route-audit.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

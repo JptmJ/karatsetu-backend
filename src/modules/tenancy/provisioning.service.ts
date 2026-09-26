@@ -12,7 +12,7 @@ import { newId } from '../../core/util/id.js';
 import { logger } from '../../core/util/logger.js';
 import { DEFAULT_ACCOUNTS } from '../accounts/accounts.schema.js';
 import { DEFAULT_SERIES } from '../numbering/numbering.service.js';
-import { ADMIN_ROLE } from '../platform/roles.js';
+import { seedSystemRoles } from '../identity/role-seed.js';
 import { hashPassword } from '../identity/auth.service.js';
 import { MODULE_CATALOG, type TenantKind } from './module-catalog.js';
 
@@ -27,11 +27,39 @@ export interface ProvisionInput {
   firstBranch?: { code: string; name: string; kind?: 'showroom' | 'factory' | 'warehouse' | 'office' };
 }
 
+export async function provisionTenant(
+  tx: Tx,
+  tenantId: string,
+  options: { legalName: string; displayName?: string; stateCode?: string; kind?: TenantKind; firstBranch?: { code: string; name: string; kind?: 'showroom' | 'factory' | 'warehouse' | 'office' } },
+): Promise<{ branchId: string }>;
 export async function provisionTenant(input: ProvisionInput): Promise<{
   tenantId: string; branchId: string; ownerUserId: string;
-}> {
-  // The tenant row itself has to be created outside any tenant scope —
-  // there is no tenant to scope to yet.
+}>;
+export async function provisionTenant(
+  first: Tx | ProvisionInput,
+  second?: string | { legalName: string; displayName?: string; stateCode?: string; kind?: TenantKind },
+  third?: { legalName: string; displayName?: string; stateCode?: string; kind?: TenantKind },
+): Promise<{ branchId: string; tenantId?: string; ownerUserId?: string }> {
+  if ('context' in first) {
+    const tx = first as Tx;
+    const options = third!;
+    const kind = options?.kind ?? 'retailer';
+    await enableModules(tx, kind);
+    const branchId = await createFirstBranch(tx, {
+      code: 'MAIN',
+      legalName: options.legalName,
+      displayName: options.displayName,
+      kind,
+      stateCode: options.stateCode,
+      owner: { email: '', fullName: '', password: '' },
+    });
+    await createAccounts(tx);
+    await createNumberingSeries(tx, branchId);
+    await createMetalsAndPurities(tx);
+    return { branchId };
+  }
+
+  const input = first as ProvisionInput;
   const tenantId = await asPlatform(async (tx) => {
     const existing = await tx.maybeOne<{ id: string }>(
       `select id from tenant where lower(code) = lower($1)`, [input.code],
@@ -47,13 +75,13 @@ export async function provisionTenant(input: ProvisionInput): Promise<{
     return id;
   });
 
-  // Everything else is ordinary tenant-scoped work.
   const result = await asTenant(tenantId, async (tx) => {
     await enableModules(tx, input.kind);
     const branchId = await createFirstBranch(tx, input);
     await createAccounts(tx);
     await createNumberingSeries(tx, branchId);
     await createMetalsAndPurities(tx);
+    await seedSystemRoles(tx);
     const ownerUserId = await createOwner(tx, input, branchId);
     return { branchId, ownerUserId };
   });
@@ -210,13 +238,20 @@ async function createMetalsAndPurities(tx: Tx): Promise<void> {
  * on the user row.
  */
 async function createOwner(tx: Tx, input: ProvisionInput, _branchId: string): Promise<string> {
+  const role = await tx.maybeOne<{ id: string }>(`select id from role where code = 'owner' and deleted_at is null`);
   const userId = newId();
   await tx.query(
     `insert into app_user
-       (id, tenant_id, email, full_name, password_hash, role_code, default_branch_id, is_active)
-     values ($1, $2, $3, $4, $5, $6, null, true)`,
+       (id, tenant_id, email, full_name, password_hash, default_branch_id, must_change_password, is_active)
+     values ($1, $2, $3, $4, $5, null, true, true)`,
     [userId, tx.context.tenantId, input.owner.email.toLowerCase(), input.owner.fullName,
-     await hashPassword(input.owner.password), ADMIN_ROLE],
+     await hashPassword(input.owner.password)],
   );
+  if (role) {
+    await tx.query(
+      `insert into user_role (id, tenant_id, user_id, role_id, branch_id) values ($1, $2, $3, $4, null)`,
+      [newId(), tx.context.tenantId, userId, role.id],
+    );
+  }
   return userId;
 }
