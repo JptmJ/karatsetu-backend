@@ -55,6 +55,8 @@ export interface IndexDef {
   /** Opt out of the automatic tenant_id prefix (rare: cross-tenant lookups like token_hash). */
   global?: boolean;
   method?: 'btree' | 'gin' | 'brin';
+  /** Operator class for every column, e.g. 'gin_trgm_ops' for fuzzy text search (method: 'gin'). */
+  opclass?: string;
 }
 
 export interface UniqueDef {

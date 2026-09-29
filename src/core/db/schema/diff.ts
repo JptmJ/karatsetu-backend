@@ -321,6 +321,20 @@ function diffTableInternals(
     });
   }
 
+  // Unique rules we no longer want. Loosening loses no data, and a stale one
+  // refuses rows the model now allows.
+  for (const [cname, c] of constraints) {
+    if (c.kind !== 'u' || wantedConstraints.has(cname)) continue;
+    changes.push({
+      kind: 'drop_constraint',
+      risk: 'safe',
+      table: table.name,
+      object: cname,
+      description: `unique rule ${cname} is no longer in the model`,
+      sql: [`alter table ${quoteIdent(table.name)} drop constraint ${quoteIdent(cname)}`],
+    });
+  }
+
   // Row Level Security.
   if (table.tenantScoped) {
     const needsRls = isNew || !current!.rlsEnabled || !current!.rlsForced;

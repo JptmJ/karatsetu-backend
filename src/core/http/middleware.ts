@@ -50,7 +50,7 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
 
     const path = req.originalUrl.split('?')[0];
     if (access.mustChangePassword && path !== '/api/me' && path !== '/api/me/password') {
-      return next(new ForbiddenError('Please set a new password before continuing.'));
+      return next(new ForbiddenError('Please set a new password before continuing.', 'password_change_required'));
     }
 
     const context: RequestContext = {

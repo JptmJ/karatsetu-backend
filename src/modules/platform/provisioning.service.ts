@@ -188,19 +188,7 @@ export async function createBranch(tenantId: string, input: CreateBranchInput, a
     for (const location of locations) {
       await repo(tx, 'stock_location').insert({ branch_id: created.id, ...location, is_active: true });
     }
-
-    // A branch also needs its own document numbering, or the first invoice fails.
-    const { DEFAULT_SERIES } = await import('../numbering/numbering.service.js');
-    for (const series of DEFAULT_SERIES) {
-      await tx.query(
-        `insert into numbering_series (id, tenant_id, doc_type, branch_id, name, prefix, padding, reset_period, next_number, is_active)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, 1, true)
-         on conflict do nothing`,
-        [newId(), tenantId, series.doc_type, created.id, series.name, series.prefix,
-         'padding' in series ? series.padding : 5,
-         'reset_period' in series ? series.reset_period : 'financial_yearly'],
-      );
-    }
+    // Numbering needs nothing here: the business's shared series serve every branch.
     return created;
   });
 

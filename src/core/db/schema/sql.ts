@@ -85,7 +85,7 @@ export function createIndexSql(table: string, ix: IndexDef): string {
     `on ${quoteIdent(table)}`,
   ];
   if (ix.method && ix.method !== 'btree') parts.push(`using ${ix.method}`);
-  parts.push(`(${ix.columns.map(quoteIdent).join(', ')})`);
+  parts.push(`(${ix.columns.map((c) => (ix.opclass ? `${quoteIdent(c)} ${ix.opclass}` : quoteIdent(c))).join(', ')})`);
   // `nulls not distinct` sits between the column list and the predicate.
   if (ix.unique && ix.nullsNotDistinct) parts.push('nulls not distinct');
   if (ix.where) parts.push(`where ${ix.where}`);

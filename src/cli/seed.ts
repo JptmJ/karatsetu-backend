@@ -177,14 +177,6 @@ async function seedTenant(seed: TenantSeed, password: string) {
       items.set(d.code, (row as { id: string }).id);
     }
 
-    // a tag template so the print queue works
-    await repo(tx, 'tag_template').insert({
-      code: 'DUAL-WING', name: 'Dual-wing String Tag (85x15mm)', format: 'string_tag_dual_wing',
-      width_mm: '85', height_mm: '15', barcode_type: 'code128',
-      printer_model: 'Argox CP-2140', is_default: true,
-      layout: JSON.stringify({ left: ['tag_number', 'gross_weight', 'net_weight'], right: ['purity', 'huid', 'barcode'] }),
-    });
-
     // a scheme plan
     await repo(tx, 'scheme_plan').insert({
       code: 'SN-11P1', name: 'Swarna Nidhi 11+1', description: 'Pay 11 monthly installments, the 12th is on us.',
@@ -220,7 +212,7 @@ async function seedTransactions(tenantId: string, branchId: string) {
     await postPurchaseInvoice(tx, (purchase as { id: string }).id);
 
     // 2. tag finished pieces (raises stock through the tagging service)
-    const { tagPiece } = await import('../modules/tagging/tagging.service.js');
+    const { tagAll } = await import('../modules/tagging/tagging.service.js');
     const pieces: string[] = [];
     const tagged = [
       { item: 'RING-22K', gross: '8.450', stone: '0.350', huid: 'X9A7K2', cost: '58000' },
@@ -230,13 +222,13 @@ async function seedTransactions(tenantId: string, branchId: string) {
     ];
     for (const [i, t] of tagged.entries()) {
       const itemId = await id(`select id from item where code = $1`, [t.item]);
-      const piece = await tagPiece(tx, {
+      const [piece] = await tagAll(tx, [{
         itemId, purityId: p22, locationId: counter, tagNumber: `TAG-882${10 + i}`,
         grossWeight: t.gross, stoneWeight: t.stone,
         huid: t.huid, hallmarkCentre: 'BIS Mumbai AHC-1042',
-        costValue: t.cost, origin: 'opening',
-      });
-      pieces.push(piece.id);
+        costValue: t.cost,
+      }], 'opening');
+      pieces.push(piece!.id);
     }
 
     // 3. one order of each type, spread across their pipelines
@@ -379,7 +371,7 @@ Demo tenants ready.
 ${created.map((c) => `  ${c.code.padEnd(10)} ${c.email}   password: ${password}`).join('\n')}
 
   curl -s localhost:4000/api/auth/login -H 'content-type: application/json' \\
-    -d '{"tenantCode":"${created[0]!.code}","email":"${created[0]!.email}","password":"${password}"}'
+    -d '{"tenantCode":"${created[0]!.code}","identifier":"${created[0]!.email}","password":"${password}"}'
 
   Docs: http://localhost:4000/dev-docs
 `);

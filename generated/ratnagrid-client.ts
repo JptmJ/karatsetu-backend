@@ -5,11 +5,11 @@
  * into the frontend. Every type here comes from the schema that validates the
  * real request, so a mismatch between this file and the server is impossible.
  *
- * Generated 2026-09-20T10:47:34.332Z from 122 endpoints.
+ * Generated 2026-09-29T12:59:12.393Z from 178 endpoints.
  */
 
 export interface ApiError {
-  code: "validation_error" | "unauthorized" | "forbidden" | "module_locked" | "not_found" | "duplicate" | "in_use" | "conflict" | "busy" | "check_failed" | "business_rule" | "insufficient_stock" | "rate_missing" | "numbering_series_missing" | "already_posted" | "backdating_not_allowed" | "invalid_stage_move" | "internal_error" | (string & {});
+  code: "validation_error" | "unauthorized" | "session_expired" | "invalid_credentials" | "account_locked" | "account_inactive" | "tenant_inactive" | "no_branch" | "rate_limited" | "forbidden" | "branch_forbidden" | "password_change_required" | "module_locked" | "not_found" | "duplicate" | "in_use" | "conflict" | "busy" | "check_failed" | "business_rule" | "insufficient_stock" | "rate_missing" | "numbering_series_missing" | "already_posted" | "backdating_not_allowed" | "invalid_stage_move" | "internal_error" | (string & {});
   message: string;
   details?: unknown;
   requestId?: string;
@@ -80,126 +80,207 @@ export function createClient(options: ClientOptions) {
   return {
     request,
     /**
-     * Sign in and receive tokens
+     * Sign in
      *
-     * Returns a short-lived access token plus a long-lived refresh token. Send the access token as `Authorization: Bearer <token>` on every other call. The same message is returned for a wrong email and a wrong password, so the response cannot be used to discover which accounts exist.
+     * Returns an access token and the whole session, so the app can render straight away. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: "include"`. After 20 failed attempts in a minute from one network for one shop, further attempts are refused for the rest of that minute.
      * `POST /api/auth/login`
      */
     postAuthLogin(body: {
-      /** The tenant slug, e.g. "aarohi". */
+      /** The shop code, e.g. "aarohi". */
       tenantCode: string;
-      email: string;
+      /** Email address or mobile number. */
+      identifier: string;
       password: string;
+      /** true: signed in for 30 days on this device. false: until the browser closes (12 hours at most). */
+      remember?: boolean;
     }): Promise<{
+      /** Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only. */
       accessToken: string;
-      refreshToken: string;
-      user: {
-        id: string;
-        email: string;
-        fullName: string;
+      session: {
+        user: {
+          id: string;
+          fullName: string;
+          email: unknown;
+          phone: unknown;
+          /** True: show only the change-password screen; every other call is refused until it is done. */
+          mustChangePassword: boolean;
+        };
+        tenant: {
+          id: string;
+          code: string;
+          name: string;
+          kind: string;
+          status: string;
+        };
+        /** The branch this session works in. Send it back as `X-Branch-Id`. */
         branchId: string | null;
+        branches: Array<{
+          id: string;
+          code: string;
+          name: string;
+        }>;
+        roles: Array<string>;
+        /** At the active branch. `*` or `module.*` are wildcards. */
+        permissions: Array<string>;
+        /** Modules this shop may see. Absent means never shown. */
+        modules: Array<{
+          key: string;
+          order: number;
+          group: string;
+          name: string;
+          shortName: string;
+          description: string;
+          statusLabel: string;
+          licence: "included" | "purchased" | "trial" | "expired";
+          /** Held but lapsed: show disabled, with a renew prompt. */
+          locked: boolean;
+          trialEndsAt: unknown;
+          expiresAt: unknown;
+          subModules: Array<{
+            key: string;
+            name: string;
+            status: string;
+          }>;
+        }>;
+        theme: {
+          preset_key: string;
+          css_variables: Record<string, unknown>;
+          logo_url: unknown;
+        };
       };
-      tenant: {
-        id: string;
-        code: string;
-        name: string;
-        kind: string;
-      };
-      roles: Array<string>;
-      permissions: Array<string>;
     }> {
       return request<{
+      /** Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only. */
       accessToken: string;
-      refreshToken: string;
-      user: {
-        id: string;
-        email: string;
-        fullName: string;
+      session: {
+        user: {
+          id: string;
+          fullName: string;
+          email: unknown;
+          phone: unknown;
+          /** True: show only the change-password screen; every other call is refused until it is done. */
+          mustChangePassword: boolean;
+        };
+        tenant: {
+          id: string;
+          code: string;
+          name: string;
+          kind: string;
+          status: string;
+        };
+        /** The branch this session works in. Send it back as `X-Branch-Id`. */
         branchId: string | null;
+        branches: Array<{
+          id: string;
+          code: string;
+          name: string;
+        }>;
+        roles: Array<string>;
+        /** At the active branch. `*` or `module.*` are wildcards. */
+        permissions: Array<string>;
+        /** Modules this shop may see. Absent means never shown. */
+        modules: Array<{
+          key: string;
+          order: number;
+          group: string;
+          name: string;
+          shortName: string;
+          description: string;
+          statusLabel: string;
+          licence: "included" | "purchased" | "trial" | "expired";
+          /** Held but lapsed: show disabled, with a renew prompt. */
+          locked: boolean;
+          trialEndsAt: unknown;
+          expiresAt: unknown;
+          subModules: Array<{
+            key: string;
+            name: string;
+            status: string;
+          }>;
+        }>;
+        theme: {
+          preset_key: string;
+          css_variables: Record<string, unknown>;
+          logo_url: unknown;
+        };
       };
-      tenant: {
-        id: string;
-        code: string;
-        name: string;
-        kind: string;
-      };
-      roles: Array<string>;
-      permissions: Array<string>;
     }>('POST', "/api/auth/login", { body });
     },
     /**
-     * Exchange a refresh token for a new access token
+     * Get a new access token
      *
+     * Uses the `ks_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.
      * `POST /api/auth/refresh`
      */
-    postAuthRefresh(body: {
-      refreshToken: string;
-    }): Promise<{
+    postAuthRefresh(): Promise<{
+      /** Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only. */
       accessToken: string;
     }> {
       return request<{
+      /** Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only. */
       accessToken: string;
-    }>('POST', "/api/auth/refresh", { body });
+    }>('POST', "/api/auth/refresh");
     },
     /**
-     * Revoke a refresh token
+     * Sign out
      *
+     * Ends this sign-in on every tab and clears the cookie. Safe to call when already signed out.
      * `POST /api/auth/logout`
      */
-    postAuthLogout(body: {
-      refreshToken: string;
-    }): Promise<void> {
-      return request<void>('POST', "/api/auth/logout", { body });
+    postAuthLogout(): Promise<void> {
+      return request<void>('POST', "/api/auth/logout");
     },
     /**
-     * Modules, licences and theme for the signed-in tenant
+     * Change your own password
      *
-     * Everything the module dock needs in one call. `locked: true` means the tenant holds the module but the licence has lapsed — show it, disabled, with a renew prompt. Modules the tenant should not see at all are simply absent.
-     * `GET /api/tenancy/modules`
+     * Signs out every other device and returns a new access token for this one. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: "include"`.
+     * `POST /api/me/password`
      */
-    getTenancyModules(): Promise<{
-      tenant: {
-        code: string;
-        name: string;
-        kind: string;
-        status: string;
-      };
-      theme: {
-        preset_key: string;
-        css_variables: Record<string, unknown>;
-        logo_url: unknown;
-      };
-      modules: Array<{
-        key: string;
-        order: number;
-        group: string;
-        name: string;
-        shortName: string;
-        description: string;
-        statusLabel: string;
-        licence: "included" | "purchased" | "trial" | "expired";
-        locked: boolean;
-        trialEndsAt: unknown;
-        expiresAt: unknown;
-        subModules: Array<{
-          key: string;
-          name: string;
-          status: string;
-        }>;
-      }>;
+    postMePassword(body: {
+      currentPassword: string;
+      newPassword: string;
+    }): Promise<{
+      /** Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only. */
+      accessToken: string;
     }> {
       return request<{
+      /** Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only. */
+      accessToken: string;
+    }>('POST', "/api/me/password", { body });
+    },
+    /**
+     * The session: user, shop, branch, permissions, modules and theme
+     *
+     * The same `session` sign-in returns. Call it when the app opens, and with `X-Branch-Id` after switching branch.
+     * `GET /api/me`
+     */
+    getMe(): Promise<{
+      user: {
+        id: string;
+        fullName: string;
+        email: unknown;
+        phone: unknown;
+        /** True: show only the change-password screen; every other call is refused until it is done. */
+        mustChangePassword: boolean;
+      };
       tenant: {
+        id: string;
         code: string;
         name: string;
         kind: string;
         status: string;
       };
-      theme: {
-        preset_key: string;
-        css_variables: Record<string, unknown>;
-        logo_url: unknown;
-      };
+      /** The branch this session works in. Send it back as `X-Branch-Id`. */
+      branchId: string | null;
+      branches: Array<{
+        id: string;
+        code: string;
+        name: string;
+      }>;
+      roles: Array<string>;
+      /** At the active branch. `*` or `module.*` are wildcards. */
+      permissions: Array<string>;
+      /** Modules this shop may see. Absent means never shown. */
       modules: Array<{
         key: string;
         order: number;
@@ -209,6 +290,7 @@ export function createClient(options: ClientOptions) {
         description: string;
         statusLabel: string;
         licence: "included" | "purchased" | "trial" | "expired";
+        /** Held but lapsed: show disabled, with a renew prompt. */
         locked: boolean;
         trialEndsAt: unknown;
         expiresAt: unknown;
@@ -218,7 +300,64 @@ export function createClient(options: ClientOptions) {
           status: string;
         }>;
       }>;
-    }>('GET', "/api/tenancy/modules");
+      theme: {
+        preset_key: string;
+        css_variables: Record<string, unknown>;
+        logo_url: unknown;
+      };
+    }> {
+      return request<{
+      user: {
+        id: string;
+        fullName: string;
+        email: unknown;
+        phone: unknown;
+        /** True: show only the change-password screen; every other call is refused until it is done. */
+        mustChangePassword: boolean;
+      };
+      tenant: {
+        id: string;
+        code: string;
+        name: string;
+        kind: string;
+        status: string;
+      };
+      /** The branch this session works in. Send it back as `X-Branch-Id`. */
+      branchId: string | null;
+      branches: Array<{
+        id: string;
+        code: string;
+        name: string;
+      }>;
+      roles: Array<string>;
+      /** At the active branch. `*` or `module.*` are wildcards. */
+      permissions: Array<string>;
+      /** Modules this shop may see. Absent means never shown. */
+      modules: Array<{
+        key: string;
+        order: number;
+        group: string;
+        name: string;
+        shortName: string;
+        description: string;
+        statusLabel: string;
+        licence: "included" | "purchased" | "trial" | "expired";
+        /** Held but lapsed: show disabled, with a renew prompt. */
+        locked: boolean;
+        trialEndsAt: unknown;
+        expiresAt: unknown;
+        subModules: Array<{
+          key: string;
+          name: string;
+          status: string;
+        }>;
+      }>;
+      theme: {
+        preset_key: string;
+        css_variables: Record<string, unknown>;
+        logo_url: unknown;
+      };
+    }>('GET', "/api/me");
     },
     /**
      * The full module catalog, independent of any tenant
@@ -424,7 +563,9 @@ export function createClient(options: ClientOptions) {
       /** Matches code, name, city. */
       search?: string;
       kind?: "showroom" | "factory" | "warehouse" | "office";
-      is_active?: boolean;
+      is_active?: "true" | "false";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -459,8 +600,9 @@ export function createClient(options: ClientOptions) {
       code: string;
       name: string;
       kind?: "showroom" | "factory" | "warehouse" | "office";
+      /** Its first two digits become state_code. */
       gstin?: string;
-      /** GST state code — decides CGST+SGST vs IGST. */
+      /** Only needed without a GSTIN. */
       state_code?: string;
       address_line1?: string;
       city?: string;
@@ -468,6 +610,8 @@ export function createClient(options: ClientOptions) {
       pincode?: string;
       phone?: string;
       email?: string;
+      /** Principal place of business. Setting it moves it from any other branch. */
+      is_head_office?: boolean;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', "/api/master/branches", { body });
     },
@@ -479,12 +623,17 @@ export function createClient(options: ClientOptions) {
      * Requires `master.branch.update`.
      */
     patchMasterBranchesById(params: { id: string }, body: {
+      code?: string;
       name?: string;
       gstin?: string | null;
       state_code?: string | null;
       address_line1?: unknown;
       city?: unknown;
-      phone?: string | null;
+      state?: unknown;
+      pincode?: unknown;
+      phone?: unknown;
+      email?: string | null;
+      is_head_office?: boolean;
       is_active?: boolean;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/master/branches/${encodeURIComponent(params.id)}`, { body });
@@ -507,12 +656,15 @@ export function createClient(options: ClientOptions) {
      * Requires `master.customer.view`.
      */
     getMasterParties(query?: {
-      /** Matches code, name, phone, gstin. */
+      /** Matches name, phone, code. */
       search?: string;
-      is_customer?: boolean;
-      is_supplier?: boolean;
-      is_active?: boolean;
+      is_customer?: "true" | "false";
+      is_supplier?: "true" | "false";
+      is_active?: "true" | "false";
       city?: string;
+      gstin?: string;
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -544,14 +696,17 @@ export function createClient(options: ClientOptions) {
      * Requires `master.customer.create`.
      */
     postMasterParties(body: {
-      code: string;
-      /** Customer name is required. */
-      name: string;
+      /** Leave out to get the next code, e.g. C000124. */
+      code?: string;
       is_customer?: boolean;
       is_supplier?: boolean;
+      /** Customer name is required. */
+      name: string;
       party_type?: "individual" | "business";
+      /** 10-digit Indian numbers are stored as +91XXXXXXXXXX. */
       phone?: string;
       email?: string;
+      /** Its first two digits become state_code. */
       gstin?: string;
       pan?: string;
       state_code?: string;
@@ -576,19 +731,26 @@ export function createClient(options: ClientOptions) {
      * Requires `master.customer.update`.
      */
     patchMasterPartiesById(params: { id: string }, body: {
-      name?: string;
-      is_customer?: boolean;
-      is_supplier?: boolean;
+      name?: string | null;
+      party_type?: "individual" | "business" | null;
       phone?: string | null;
       email?: string | null;
       gstin?: string | null;
       pan?: string | null;
       state_code?: string | null;
+      address_line1?: unknown;
       city?: unknown;
+      state?: unknown;
+      pincode?: unknown;
       credit_limit?: string | null;
       credit_days?: number | null;
-      kyc_status?: "none" | "pending" | "verified" | "rejected";
-      is_active?: boolean;
+      date_of_birth?: unknown;
+      anniversary?: unknown;
+      notes?: unknown;
+      is_customer?: unknown;
+      is_supplier?: unknown;
+      kyc_status?: "none" | "pending" | "verified" | "rejected" | null;
+      is_active?: unknown;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/master/parties/${encodeURIComponent(params.id)}`, { body });
     },
@@ -610,12 +772,14 @@ export function createClient(options: ClientOptions) {
      * Requires `master.item.view`.
      */
     getMasterItems(query?: {
-      /** Matches code, name. */
+      /** Matches code, name, hsn_code. */
       search?: string;
       nature?: "raw_metal" | "finished" | "stone" | "consumable" | "service";
       tracking?: "lot" | "piece";
-      is_active?: boolean;
+      is_active?: "true" | "false";
       category_id?: string;
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -701,7 +865,9 @@ export function createClient(options: ClientOptions) {
     getMasterCategories(query?: {
       /** Matches code, name. */
       search?: string;
-      is_active?: boolean;
+      is_active?: "true" | "false";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -734,9 +900,15 @@ export function createClient(options: ClientOptions) {
      */
     postMasterCategories(body: {
       code: string;
-      name: string;
       parent_id?: string;
+      name: string;
       hsn_code?: string;
+      /** Names shown under the category. */
+      sub_categories?: Array<string>;
+      /** Metal codes. Empty = any metal. */
+      applicable_metals?: Array<string>;
+      /** Default making-charge rule. */
+      making_rule_id?: string;
       sort_order?: number;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', "/api/master/categories", { body });
@@ -749,8 +921,14 @@ export function createClient(options: ClientOptions) {
      * Requires `master.item.update`.
      */
     patchMasterCategoriesById(params: { id: string }, body: {
+      code?: string;
       name?: string;
-      hsn_code?: unknown;
+      hsn_code?: string | null;
+      /** Names shown under the category. */
+      sub_categories?: Array<string>;
+      /** Metal codes. Empty = any metal. */
+      applicable_metals?: Array<string>;
+      making_rule_id?: string | null;
       sort_order?: number;
       is_active?: boolean;
     }): Promise<Record<string, unknown>> {
@@ -777,7 +955,9 @@ export function createClient(options: ClientOptions) {
       /** Matches code, name. */
       search?: string;
       metal_id?: string;
-      is_active?: boolean;
+      is_active?: "true" | "false";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -810,14 +990,21 @@ export function createClient(options: ClientOptions) {
      */
     postMasterPurities(body: {
       metal_id: string;
-      /** e.g. 22K */
-      code: string;
       name: string;
+      /** e.g. 22K. Left out: taken from the name. */
+      code?: string;
       /** 91.600 for 22K. Everything calculates from this. */
       fineness_percent: string;
-      karat?: string;
       is_hallmarkable?: boolean;
+      /** Left out: placed after the metal’s other purities. */
       sort_order?: number;
+      /** How it is written: 22K, 916 or 91.6%. */
+      notation?: "karat" | "fineness" | "percentage";
+      /** Unit forms start in. Stored weights are always grams. */
+      default_unit?: "g" | "kg" | "tola" | "oz";
+      /** Pre-selected for its metal. Setting it moves it from the metal’s other purities. */
+      is_default?: boolean;
+      description?: string;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', "/api/master/purities", { body });
     },
@@ -834,6 +1021,13 @@ export function createClient(options: ClientOptions) {
       is_hallmarkable?: boolean;
       is_active?: boolean;
       sort_order?: number;
+      /** How it is written: 22K, 916 or 91.6%. */
+      notation?: "karat" | "fineness" | "percentage";
+      /** Unit forms start in. Stored weights are always grams. */
+      default_unit?: "g" | "kg" | "tola" | "oz";
+      /** Pre-selected for its metal. Setting it moves it from the metal’s other purities. */
+      is_default?: boolean;
+      description?: string | null;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/master/purities/${encodeURIComponent(params.id)}`, { body });
     },
@@ -857,6 +1051,8 @@ export function createClient(options: ClientOptions) {
     getMasterMetals(query?: {
       /** Matches code, name. */
       search?: string;
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -929,7 +1125,9 @@ export function createClient(options: ClientOptions) {
       /** Matches code, name, workshop_name, speciality. */
       search?: string;
       engagement?: "in_house" | "external";
-      is_active?: boolean;
+      is_active?: "true" | "false";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -961,7 +1159,8 @@ export function createClient(options: ClientOptions) {
      * Requires `master.karigar.create`.
      */
     postMasterKarigars(body: {
-      code: string;
+      /** Leave out to get the next code, e.g. K0012. */
+      code?: string;
       name: string;
       workshop_name?: string;
       engagement?: "in_house" | "external";
@@ -970,6 +1169,7 @@ export function createClient(options: ClientOptions) {
       phone?: string;
       address?: string;
       pan?: string;
+      gstin?: string;
       /** Agreed metal loss allowance, in percent. */
       standard_ghat_percent?: string;
       /** Rupees, as a string. Never a float. */
@@ -985,12 +1185,16 @@ export function createClient(options: ClientOptions) {
      * Requires `master.karigar.update`.
      */
     patchMasterKarigarsById(params: { id: string }, body: {
-      name?: string;
-      speciality?: unknown;
-      phone?: string | null;
-      standard_ghat_percent?: string;
-      /** Rupees, as a string. Never a float. */
-      labour_rate_per_gram?: string;
+      name?: string | null;
+      workshop_name?: unknown;
+      engagement?: "in_house" | "external" | null;
+      speciality?: string | null;
+      phone?: unknown;
+      address?: unknown;
+      pan?: string | null;
+      gstin?: string | null;
+      standard_ghat_percent?: string | null;
+      labour_rate_per_gram?: string | null;
       is_active?: boolean;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/master/karigars/${encodeURIComponent(params.id)}`, { body });
@@ -1017,6 +1221,8 @@ export function createClient(options: ClientOptions) {
       search?: string;
       branch_id?: string;
       kind?: "counter" | "vault" | "window" | "floor" | "transit" | "karigar";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -1081,9 +1287,9 @@ export function createClient(options: ClientOptions) {
       return request<void>('DELETE', `/api/master/locations/${encodeURIComponent(params.id)}`);
     },
     /**
-     * Today’s broadcast rates
+     * Today’s rate for every active purity
      *
-     * The latest rate per metal and purity, honouring a branch-specific rate over the shared one. This is what POS prices from — a sale is refused with `rate_missing` when no rate exists.
+     * One row per active purity, with its latest rate (a branch rate beats the shared one) and the last rate before today, for the day’s change. A purity with no rate yet has null rate fields — POS refuses to bill it with `rate_missing`.
      * `GET /api/master/rates/current`
      * Requires `master.rates.view`.
      */
@@ -1091,28 +1297,38 @@ export function createClient(options: ClientOptions) {
       branchId?: string;
     }): Promise<{
       rates: Array<{
-        id: string;
+        purity_id: string;
+        purity_code: string;
+        purity_name: string;
+        fineness_percent: string;
         metal_id: string;
         metal_code: string;
-        purity_id: string | null;
-        purity_code: unknown;
-        /** Rupees, as a string. Never a float. */
-        rate_per_gram: string;
+        metal_name: string;
+        id: string | null;
+        rate_per_gram: string | null;
         buying_rate_per_gram: string | null;
-        effective_from: string;
+        effective_from: unknown;
+        source: unknown;
+        /** Last rate set before today (shop time zone). */
+        previous_rate_per_gram: string | null;
       }>;
     }> {
       return request<{
       rates: Array<{
-        id: string;
+        purity_id: string;
+        purity_code: string;
+        purity_name: string;
+        fineness_percent: string;
         metal_id: string;
         metal_code: string;
-        purity_id: string | null;
-        purity_code: unknown;
-        /** Rupees, as a string. Never a float. */
-        rate_per_gram: string;
+        metal_name: string;
+        id: string | null;
+        rate_per_gram: string | null;
         buying_rate_per_gram: string | null;
-        effective_from: string;
+        effective_from: unknown;
+        source: unknown;
+        /** Last rate set before today (shop time zone). */
+        previous_rate_per_gram: string | null;
       }>;
     }>('GET', "/api/master/rates/current", { query });
     },
@@ -1153,6 +1369,508 @@ export function createClient(options: ClientOptions) {
       return request<{
       rows: Array<Record<string, unknown>>;
     }>('GET', "/api/master/rates/history", { query });
+    },
+    /**
+     * List GST rates
+     *
+     * Paginated. `total` is the count before paging, for the pager.
+     * `GET /api/master/gst-rates`
+     * Requires `master.tax.view`.
+     */
+    getMasterGstrates(query?: {
+      /** Matches hsn_code, description. */
+      search?: string;
+      hsn_code?: string;
+      component?: "metal" | "making" | "stone" | "service" | "hallmark" | "other";
+      code_type?: "hsn" | "sac";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }>('GET', "/api/master/gst-rates", { query });
+    },
+    /**
+     * Get one GST rate
+     *
+     * `GET /api/master/gst-rates/:id`
+     * Requires `master.tax.view`.
+     */
+    getMasterGstratesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/master/gst-rates/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Create a GST rate
+     *
+     * `POST /api/master/gst-rates`
+     * Requires `master.tax.create`.
+     */
+    postMasterGstrates(body: {
+      hsn_code: string;
+      code_type?: "hsn" | "sac";
+      description?: string;
+      component: "metal" | "making" | "stone" | "service" | "hallmark" | "other";
+      /** Total GST %, e.g. 3. CGST/SGST/IGST are derived from it. */
+      gst_rate: string;
+      cess_rate?: string;
+      is_reverse_charge?: boolean;
+      effective_from: string;
+      /** Notification number or CA confirmation. */
+      source_note?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/master/gst-rates", { body });
+    },
+    /**
+     * Update a GST rate
+     *
+     * Only the fields you send are changed.
+     * `PATCH /api/master/gst-rates/:id`
+     * Requires `master.tax.update`.
+     */
+    patchMasterGstratesById(params: { id: string }, body: {
+      description?: string | null;
+      source_note?: string | null;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/master/gst-rates/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Remove a GST rate
+     *
+     * Hard delete. Fails if anything references it.
+     * `DELETE /api/master/gst-rates/:id`
+     * Requires `master.tax.delete`.
+     */
+    deleteMasterGstratesById(params: { id: string }): Promise<void> {
+      return request<void>('DELETE', `/api/master/gst-rates/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * List price rules
+     *
+     * Paginated. `total` is the count before paging, for the pager.
+     * `GET /api/master/price-rules`
+     * Requires `master.pricing.view`.
+     */
+    getMasterPricerules(query?: {
+      /** Matches code, name. */
+      search?: string;
+      applies_to?: "making" | "wastage" | "stone" | "hallmark" | "discount";
+      is_active?: "true" | "false";
+      metal_id?: string;
+      item_category_id?: string;
+      branch_id?: string;
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }>('GET', "/api/master/price-rules", { query });
+    },
+    /**
+     * Get one price rule
+     *
+     * `GET /api/master/price-rules/:id`
+     * Requires `master.pricing.view`.
+     */
+    getMasterPricerulesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/master/price-rules/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Create a price rule
+     *
+     * `POST /api/master/price-rules`
+     * Requires `master.pricing.create`.
+     */
+    postMasterPricerules(body: {
+      code: string;
+      name: string;
+      applies_to: "making" | "wastage" | "stone" | "hallmark" | "discount";
+      basis: "per_gram" | "percent" | "flat" | "slab" | "hybrid";
+      rate?: string | null;
+      flat_amount?: string | null;
+      slabs?: Array<{
+        fromG: string;
+        toG: string | null;
+        rate: string;
+      }>;
+      slab_mode?: "whole" | "tiered";
+      minimum_amount?: string | null;
+      metal_id?: string | null;
+      purity_id?: string | null;
+      item_category_id?: string | null;
+      item_id?: string | null;
+      branch_id?: string | null;
+      priority?: number;
+      effective_from?: string;
+      effective_to?: string | null;
+      is_active?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/master/price-rules", { body });
+    },
+    /**
+     * Update a price rule
+     *
+     * Only the fields you send are changed.
+     * `PATCH /api/master/price-rules/:id`
+     * Requires `master.pricing.update`.
+     */
+    patchMasterPricerulesById(params: { id: string }, body: {
+      name?: string;
+      applies_to?: "making" | "wastage" | "stone" | "hallmark" | "discount";
+      basis?: "per_gram" | "percent" | "flat" | "slab" | "hybrid";
+      rate?: string | null;
+      flat_amount?: string | null;
+      slabs?: Array<{
+        fromG: string;
+        toG: string | null;
+        rate: string;
+      }>;
+      slab_mode?: "whole" | "tiered";
+      minimum_amount?: string | null;
+      metal_id?: string | null;
+      purity_id?: string | null;
+      item_category_id?: string | null;
+      item_id?: string | null;
+      branch_id?: string | null;
+      priority?: number;
+      effective_from?: string;
+      effective_to?: string | null;
+      is_active?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/master/price-rules/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Remove a price rule
+     *
+     * Soft delete — the row stays for the audit trail and disappears from lists.
+     * `DELETE /api/master/price-rules/:id`
+     * Requires `master.pricing.delete`.
+     */
+    deleteMasterPricerulesById(params: { id: string }): Promise<void> {
+      return request<void>('DELETE', `/api/master/price-rules/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * List payment methods
+     *
+     * Paginated. `total` is the count before paging, for the pager.
+     * `GET /api/master/payment-methods`
+     * Requires `master.payment.view`.
+     */
+    getMasterPaymentmethods(query?: {
+      /** Matches code, name. */
+      search?: string;
+      kind?: "cash" | "card" | "upi" | "bank_transfer" | "cheque" | "credit" | "old_gold" | "scheme" | "advance" | "emi" | "wallet";
+      is_active?: "true" | "false";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }>('GET', "/api/master/payment-methods", { query });
+    },
+    /**
+     * Get one payment method
+     *
+     * `GET /api/master/payment-methods/:id`
+     * Requires `master.payment.view`.
+     */
+    getMasterPaymentmethodsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/master/payment-methods/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Create a payment method
+     *
+     * `POST /api/master/payment-methods`
+     * Requires `master.payment.create`.
+     */
+    postMasterPaymentmethods(body: {
+      name: string;
+      /** Ledger the money lands in. */
+      account_id?: string | null;
+      requires_reference?: boolean;
+      charges_percent?: string | null;
+      /** Per-tender limit. Empty = no limit. */
+      max_amount?: string | null;
+      sort_order?: number;
+      is_active?: boolean;
+      code: string;
+      /** How the system settles it. Cannot be changed later. */
+      kind: "cash" | "card" | "upi" | "bank_transfer" | "cheque" | "credit" | "old_gold" | "scheme" | "advance" | "emi" | "wallet";
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/master/payment-methods", { body });
+    },
+    /**
+     * Update a payment method
+     *
+     * Only the fields you send are changed.
+     * `PATCH /api/master/payment-methods/:id`
+     * Requires `master.payment.update`.
+     */
+    patchMasterPaymentmethodsById(params: { id: string }, body: {
+      name?: string;
+      /** Ledger the money lands in. */
+      account_id?: string | null;
+      requires_reference?: boolean;
+      charges_percent?: string | null;
+      /** Per-tender limit. Empty = no limit. */
+      max_amount?: string | null;
+      sort_order?: number;
+      is_active?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/master/payment-methods/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Remove a payment method
+     *
+     * Soft delete — the row stays for the audit trail and disappears from lists.
+     * `DELETE /api/master/payment-methods/:id`
+     * Requires `master.payment.delete`.
+     */
+    deleteMasterPaymentmethodsById(params: { id: string }): Promise<void> {
+      return request<void>('DELETE', `/api/master/payment-methods/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Choose which branches offer this payment method
+     *
+     * Send the full list. An empty list means every branch.
+     * `PUT /api/master/payment-methods/:id/branches`
+     * Requires `master.payment.update`.
+     */
+    putMasterPaymentmethodsByIdBranches(params: { id: string }, body: {
+      branchIds: Array<string>;
+    }): Promise<void> {
+      return request<void>('PUT', `/api/master/payment-methods/${encodeURIComponent(params.id)}/branches`, { body });
+    },
+    /**
+     * Bill number series
+     *
+     * One entry per document type. The preview is worked out by the same code that numbers real documents.
+     * `GET /api/master/numbering`
+     * Requires `settings.numbering.view`.
+     */
+    getMasterNumbering(): Promise<{
+      rows: Array<{
+        id: string;
+        docType: string;
+        name: string;
+        prefix: string;
+        digitPadding: number;
+        /** The last number handed out in the current period. 0 = none yet. */
+        lastNumber: number;
+        /** Counter starts again at 1 each April. */
+        financialYearReset: boolean;
+        financialYearFormat: "YY-YY" | "YYYY" | "none";
+        branchScope: "shared" | "per_branch";
+        /** Exactly what the next document at your branch will get. */
+        nextNumberPreview: string;
+      }>;
+    }> {
+      return request<{
+      rows: Array<{
+        id: string;
+        docType: string;
+        name: string;
+        prefix: string;
+        digitPadding: number;
+        /** The last number handed out in the current period. 0 = none yet. */
+        lastNumber: number;
+        /** Counter starts again at 1 each April. */
+        financialYearReset: boolean;
+        financialYearFormat: "YY-YY" | "YYYY" | "none";
+        branchScope: "shared" | "per_branch";
+        /** Exactly what the next document at your branch will get. */
+        nextNumberPreview: string;
+      }>;
+    }>('GET', "/api/master/numbering");
+    },
+    /**
+     * Change a bill number series
+     *
+     * Shared: one counter for all branches. Per branch: each branch counts on its own and its code is part of the number, so two branches can never produce the same number. `lastNumber` can only move forward (e.g. to continue from old software); going back would reissue numbers.
+     * `PATCH /api/master/numbering/:id`
+     * Requires `settings.numbering.update`.
+     */
+    patchMasterNumberingById(params: { id: string }, body: {
+      name?: string;
+      prefix: string;
+      digitPadding: number;
+      lastNumber?: number;
+      financialYearReset: boolean;
+      financialYearFormat: "YY-YY" | "YYYY" | "none";
+      branchScope: "shared" | "per_branch";
+    }): Promise<{
+      id: string;
+      docType: string;
+      name: string;
+      prefix: string;
+      digitPadding: number;
+      /** The last number handed out in the current period. 0 = none yet. */
+      lastNumber: number;
+      /** Counter starts again at 1 each April. */
+      financialYearReset: boolean;
+      financialYearFormat: "YY-YY" | "YYYY" | "none";
+      branchScope: "shared" | "per_branch";
+      /** Exactly what the next document at your branch will get. */
+      nextNumberPreview: string;
+    }> {
+      return request<{
+      id: string;
+      docType: string;
+      name: string;
+      prefix: string;
+      digitPadding: number;
+      /** The last number handed out in the current period. 0 = none yet. */
+      lastNumber: number;
+      /** Counter starts again at 1 each April. */
+      financialYearReset: boolean;
+      financialYearFormat: "YY-YY" | "YYYY" | "none";
+      branchScope: "shared" | "per_branch";
+      /** Exactly what the next document at your branch will get. */
+      nextNumberPreview: string;
+    }>('PATCH', `/api/master/numbering/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Print formats
+     *
+     * A business that has none yet gets the six standard formats on first call.
+     * `GET /api/master/document-formats`
+     * Requires `master.documents.view`.
+     */
+    getMasterDocumentformats(): Promise<{
+      rows: Array<{
+        id: string;
+        code: string;
+        doc_type: "invoice" | "advance_receipt" | "old_gold_voucher" | "scheme_receipt" | "girvi_pawn_ticket";
+        title: string;
+        paper_size: "A4" | "A5" | "Thermal_80mm" | "Thermal_3inch";
+        header_style: "logo_top" | "letterhead_preprinted" | "minimal";
+        numbering_doc_type: unknown;
+        field_toggles: Record<string, unknown>;
+        terms: string;
+        updated_at: string;
+      }>;
+    }> {
+      return request<{
+      rows: Array<{
+        id: string;
+        code: string;
+        doc_type: "invoice" | "advance_receipt" | "old_gold_voucher" | "scheme_receipt" | "girvi_pawn_ticket";
+        title: string;
+        paper_size: "A4" | "A5" | "Thermal_80mm" | "Thermal_3inch";
+        header_style: "logo_top" | "letterhead_preprinted" | "minimal";
+        numbering_doc_type: unknown;
+        field_toggles: Record<string, unknown>;
+        terms: string;
+        updated_at: string;
+      }>;
+    }>('GET', "/api/master/document-formats");
+    },
+    /**
+     * Change a print format
+     *
+     * Send only what changed. `field_toggles` is merged, so one switch can be sent on its own.
+     * `PATCH /api/master/document-formats/:id`
+     * Requires `master.documents.update`.
+     */
+    patchMasterDocumentformatsById(params: { id: string }, body: {
+      title?: string;
+      paper_size?: "A4" | "A5" | "Thermal_80mm" | "Thermal_3inch";
+      header_style?: "logo_top" | "letterhead_preprinted" | "minimal";
+      field_toggles?: {
+        showWeightBreakdown?: boolean;
+        showGstSplit?: boolean;
+        showHuidList?: boolean;
+        showQrCode?: boolean;
+        showBankDetails?: boolean;
+        showTermsAndConditions?: boolean;
+        showCashierSignature?: boolean;
+        showCustomerSignature?: boolean;
+      };
+      terms?: string;
+    }): Promise<{
+      id: string;
+      code: string;
+      doc_type: "invoice" | "advance_receipt" | "old_gold_voucher" | "scheme_receipt" | "girvi_pawn_ticket";
+      title: string;
+      paper_size: "A4" | "A5" | "Thermal_80mm" | "Thermal_3inch";
+      header_style: "logo_top" | "letterhead_preprinted" | "minimal";
+      numbering_doc_type: unknown;
+      field_toggles: Record<string, unknown>;
+      terms: string;
+      updated_at: string;
+    }> {
+      return request<{
+      id: string;
+      code: string;
+      doc_type: "invoice" | "advance_receipt" | "old_gold_voucher" | "scheme_receipt" | "girvi_pawn_ticket";
+      title: string;
+      paper_size: "A4" | "A5" | "Thermal_80mm" | "Thermal_3inch";
+      header_style: "logo_top" | "letterhead_preprinted" | "minimal";
+      numbering_doc_type: unknown;
+      field_toggles: Record<string, unknown>;
+      terms: string;
+      updated_at: string;
+    }>('PATCH', `/api/master/document-formats/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Import masters in bulk
+     *
+     * kind: customers, karigars, categories or items. Up to 1,000 rows a call; send a big file as several calls, passing `firstRow` so errors name the spreadsheet row. Matched on `code`: an existing code is updated and a blank cell keeps the saved value. Customers and karigars without a code get the next one. Items name their category, metal and purity by code (import categories first). Needs the create permission of that master.
+     * `POST /api/master/import/:kind`
+     */
+    postMasterImportByKind(params: { kind: string }, body: {
+      rows: Array<Record<string, unknown>>;
+      /** Spreadsheet row of rows[0] — 2 when row 1 holds the headings. */
+      firstRow?: number;
+    }): Promise<{
+      received: number;
+      inserted: number;
+      updated: number;
+      /** Rows not saved, with the spreadsheet row number. */
+      failed: Array<{
+        row: number;
+        message: string;
+      }>;
+    }> {
+      return request<{
+      received: number;
+      inserted: number;
+      updated: number;
+      /** Rows not saved, with the spreadsheet row number. */
+      failed: Array<{
+        row: number;
+        message: string;
+      }>;
+    }>('POST', `/api/master/import/${encodeURIComponent(params.kind)}`, { body });
     },
     /**
      * The Kanban stages for every order type
@@ -1600,9 +2318,90 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', `/api/pos/purchases/${encodeURIComponent(params.id)}/cancel`, { body });
     },
     /**
-     * Current stock by item, purity and location
+     * Stock totals for the header cards
      *
-     * Lot-tracked items carry weight only; piece-tracked items carry a count as well.
+     * Per metal: pieces, gross, net and fine weight and cost value on hand (goods in transit excluded), plus the tag print queue (whole branch, and tagged by you), hallmarkable pieces without a HUID, transfers on the road to this branch and open counts.
+     * `GET /api/stock/summary`
+     * Requires `stock.view`.
+     */
+    getStockSummary(query?: {
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/stock/summary", { query });
+    },
+    /**
+     * Tagged pieces
+     *
+     * Newest first, a page at a time. `search` matches tag number, HUID or item name. `unprinted=true` is the tag print queue; `mine=true` keeps pieces you tagged.
+     * `GET /api/stock/pieces`
+     * Requires `stock.view`.
+     */
+    getStockPieces(query?: {
+      search?: string;
+      status?: "in_stock" | "on_memo" | "sold" | "in_transit" | "with_karigar" | "in_repair" | "melted" | "written_off";
+      branchId?: string;
+      locationId?: string;
+      itemId?: string;
+      purityId?: string;
+      unprinted?: "true" | "false";
+      mine?: "true" | "false";
+      /** From the previous page’s nextCursor. */
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/stock/pieces", { query });
+    },
+    /**
+     * One piece with its history
+     *
+     * The piece, every stock movement it made, and its HUID history.
+     * `GET /api/stock/pieces/:id`
+     * Requires `stock.view`.
+     */
+    getStockPiecesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/stock/pieces/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Add or replace a piece’s HUID
+     *
+     * The old HUID is kept in the history as superseded.
+     * `POST /api/stock/pieces/:id/huid`
+     * Requires `tagging.update`.
+     */
+    postStockPiecesByIdHuid(params: { id: string }, body: {
+      huid: string;
+      hallmarkCentre?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/pieces/${encodeURIComponent(params.id)}/huid`, { body });
+    },
+    /**
+     * Correct a piece’s weights
+     *
+     * For a weighing mistake. Posts a weighing-correction adjustment so stock follows. Owner and branch admin only.
+     * `POST /api/stock/pieces/:id/weights`
+     * Requires `stock.adjustment.post`.
+     */
+    postStockPiecesByIdWeights(params: { id: string }, body: {
+      /** Grams, as a string. */
+      grossWeight: string;
+      /** Grams, as a string. */
+      stoneWeight?: string;
+      /** Grams, as a string. */
+      otherWeight?: string;
+      note: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/pieces/${encodeURIComponent(params.id)}/weights`, { body });
+    },
+    /**
+     * Stock by item, purity and location
+     *
+     * `tracking=lot` is the Lots view: bulk metal and findings by weight, valued at average cost.
      * `GET /api/stock/balances`
      * Requires `stock.view`.
      */
@@ -1610,7 +2409,8 @@ export function createClient(options: ClientOptions) {
       branchId?: string;
       locationId?: string;
       itemId?: string;
-      nonZeroOnly?: boolean;
+      tracking?: "lot" | "piece";
+      search?: string;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
     }> {
@@ -1619,38 +2419,9 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/stock/balances", { query });
     },
     /**
-     * Tagged pieces (HUID stock)
-     *
-     * Search by tag number or HUID — this is what the command palette queries.
-     * `GET /api/stock/pieces`
-     * Requires `stock.view`.
-     */
-    getStockPieces(query?: {
-      /** Matches tag number or HUID. */
-      search?: string;
-      status?: "in_stock" | "on_memo" | "sold" | "in_transit" | "with_karigar" | "in_repair" | "melted" | "written_off";
-      locationId?: string;
-      branchId?: string;
-      itemId?: string;
-      limit?: number;
-      offset?: number;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }>('GET', "/api/stock/pieces", { query });
-    },
-    /**
      * The stock journal
      *
-     * Append-only. This is how you answer “where did those 4 grams go”.
+     * Append-only, newest first. This is how you answer “where did those 4 grams go”.
      * `GET /api/stock/movements`
      * Requires `stock.view`.
      */
@@ -1660,14 +2431,16 @@ export function createClient(options: ClientOptions) {
       pieceId?: string;
       sourceType?: string;
       sourceId?: string;
-      from?: string;
-      to?: string;
+      /** From the previous page’s nextCursor. */
+      cursor?: string;
       limit?: number;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
     }> {
       return request<{
       rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
     }>('GET', "/api/stock/movements", { query });
     },
     /**
@@ -1675,7 +2448,7 @@ export function createClient(options: ClientOptions) {
      *
      * Recomputes every balance from stock_movement. Nothing should need this, which is why it exists.
      * `POST /api/stock/balances/rebuild`
-     * Requires `stock.verification.approve`.
+     * Requires `stock.adjustment.post`.
      */
     postStockBalancesRebuild(): Promise<{
       ok: boolean;
@@ -1687,68 +2460,399 @@ export function createClient(options: ClientOptions) {
     }>('POST', "/api/stock/balances/rebuild");
     },
     /**
-     * Tag a new piece and assign its HUID
+     * Opening stock in bulk
      *
-     * Creates the physical piece record, allocates a tag number from the tag series, and records the BIS HUID. Net metal weight is gross minus stones.
-     * `POST /api/tagging/pieces`
-     * Requires `tagging.create`.
+     * kind: pieces (one row per tagged piece; blank tag_number takes the next tag) or lots (one row per item + purity, by weight). Every row goes into `locationId`. Up to 1,000 rows a call; good rows are saved, bad ones come back with their spreadsheet row. Items and purities are named by code.
+     * `POST /api/stock/import/:kind`
+     * Requires `stock.opening.create`.
      */
-    postTaggingPieces(body: {
-      itemId: string;
-      purityId: string;
+    postStockImportByKind(params: { kind: string }, body: {
       locationId: string;
-      /** Total weight as measured. */
-      grossWeight: string;
-      /** Deducted to get net metal weight. */
-      stoneWeight?: string;
-      /** Grams, as a string. */
-      otherWeight?: string;
-      stoneCount?: number;
-      /** Rupees, as a string. Never a float. */
-      stoneValue?: string;
-      huid?: string;
-      hallmarkCentre?: string;
-      /** Rupees, as a string. Never a float. */
-      costValue?: string;
-      /** Rupees, as a string. Never a float. */
-      makingCost?: string;
-      supplierId?: string;
-      /** Omit to allocate from the tag series. */
-      tagNumber?: string;
-      /** Where the piece came from. `purchase` writes no stock movement, because the purchase invoice already raised it — anything else raises stock. */
-      origin?: "opening" | "purchase" | "production_receipt" | "sales_return";
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/tagging/pieces", { body });
+      rows: Array<Record<string, unknown>>;
+      /** Spreadsheet row of rows[0]. */
+      firstRow?: number;
+    }): Promise<{
+      received: number;
+      inserted: number;
+      failed: Array<{
+        row: number;
+        message: string;
+      }>;
+    }> {
+      return request<{
+      received: number;
+      inserted: number;
+      failed: Array<{
+        row: number;
+        message: string;
+      }>;
+    }>('POST', `/api/stock/import/${encodeURIComponent(params.kind)}`, { body });
     },
     /**
-     * The thermal printer queue
+     * Transfers
      *
-     * `GET /api/tagging/queue`
-     * Requires `tagging.view`.
+     * `branchId` matches either end.
+     * `GET /api/stock/transfers`
+     * Requires `stock.view`.
      */
-    getTaggingQueue(query?: {
-      status?: "queued" | "printing" | "printed" | "failed" | "cancelled";
+    getStockTransfers(query?: {
+      status?: "in_transit" | "received" | "cancelled";
       branchId?: string;
+      /** From the previous page’s nextCursor. */
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/stock/transfers", { query });
+    },
+    /**
+     * One transfer with its lines
+     *
+     * `GET /api/stock/transfers/:id`
+     * Requires `stock.view`.
+     */
+    getStockTransfersById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/stock/transfers/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Send stock to another location
+     *
+     * Inside a branch it completes at once. To another branch it stays in transit until that branch receives it.
+     * `POST /api/stock/transfers`
+     * Requires `stock.transfer.create`.
+     */
+    postStockTransfers(body: {
+      fromLocationId: string;
+      toLocationId: string;
+      pieceIds?: Array<string>;
+      lots?: Array<{
+        itemId: string;
+        purityId: string;
+        /** Grams, as a string. */
+        netWeight: string;
+        /** Grams, as a string. */
+        grossWeight?: string;
+      }>;
+      note?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/stock/transfers", { body });
+    },
+    /**
+     * Receive a transfer
+     *
+     * The receiving branch confirms the goods arrived.
+     * `POST /api/stock/transfers/:id/receive`
+     * Requires `stock.transfer.post`.
+     */
+    postStockTransfersByIdReceive(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/transfers/${encodeURIComponent(params.id)}/receive`);
+    },
+    /**
+     * Cancel a transfer on the road
+     *
+     * The goods go back to where they were sent from.
+     * `POST /api/stock/transfers/:id/cancel`
+     * Requires `stock.transfer.cancel`.
+     */
+    postStockTransfersByIdCancel(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/transfers/${encodeURIComponent(params.id)}/cancel`);
+    },
+    /**
+     * Adjustments
+     *
+     * `GET /api/stock/adjustments`
+     * Requires `stock.view`.
+     */
+    getStockAdjustments(query?: {
+      branchId?: string;
+      /** From the previous page’s nextCursor. */
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/stock/adjustments", { query });
+    },
+    /**
+     * Adjust stock
+     *
+     * shortage, damage, loss and write_off take pieces (written off) and lot weight out; found adds lot weight. One branch per adjustment, a note is required, and it cannot be edited. Owner and branch admin only.
+     * `POST /api/stock/adjustments`
+     * Requires `stock.adjustment.post`.
+     */
+    postStockAdjustments(body: {
+      reason: "shortage" | "damage" | "loss" | "write_off" | "found";
+      note: string;
+      pieceIds?: Array<string>;
+      lots?: Array<{
+        itemId: string;
+        purityId: string;
+        /** Grams, as a string. */
+        netWeight: string;
+        /** Grams, as a string. */
+        grossWeight?: string;
+        locationId: string;
+      }>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/stock/adjustments", { body });
+    },
+    /**
+     * Stock counts
+     *
+     * `GET /api/stock/counts`
+     * Requires `stock.view`.
+     */
+    getStockCounts(query?: {
+      branchId?: string;
+      status?: "open" | "posted" | "cancelled";
+      /** From the previous page’s nextCursor. */
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/stock/counts", { query });
+    },
+    /**
+     * Start counting a location
+     *
+     * `POST /api/stock/counts`
+     * Requires `stock.count.create`.
+     */
+    postStockCounts(body: {
+      locationId: string;
+      note?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/stock/counts", { body });
+    },
+    /**
+     * A count against the books
+     *
+     * Every piece as found, missing, elsewhere or unknown; every lot with book and counted weight.
+     * `GET /api/stock/counts/:id`
+     * Requires `stock.view`.
+     */
+    getStockCountsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/stock/counts/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Scan tags
+     *
+     * Send one tag per scan, or many pasted at once. A tag already scanned is ignored.
+     * `POST /api/stock/counts/:id/scan`
+     * Requires `stock.count.create`.
+     */
+    postStockCountsByIdScan(params: { id: string }, body: {
+      tags: Array<string>;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
     }> {
       return request<{
       rows: Array<Record<string, unknown>>;
-    }>('GET', "/api/tagging/queue", { query });
+    }>('POST', `/api/stock/counts/${encodeURIComponent(params.id)}/scan`, { body });
     },
     /**
-     * Queue pieces for printing
+     * Record a lot’s weight on the scale
      *
-     * `POST /api/tagging/queue`
+     * `POST /api/stock/counts/:id/lots`
+     * Requires `stock.count.create`.
+     */
+    postStockCountsByIdLots(params: { id: string }, body: {
+      itemId: string;
+      purityId: string;
+      /** Grams, as a string. */
+      netWeight: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/counts/${encodeURIComponent(params.id)}/lots`, { body });
+    },
+    /**
+     * Remove a scanned tag or weighed lot
+     *
+     * `DELETE /api/stock/counts/:id/lines/:lineId`
+     * Requires `stock.count.create`.
+     */
+    deleteStockCountsByIdLinesByLineId(params: { id: string; lineId: string }): Promise<void> {
+      return request<void>('DELETE', `/api/stock/counts/${encodeURIComponent(params.id)}/lines/${encodeURIComponent(params.lineId)}`);
+    },
+    /**
+     * Post a count
+     *
+     * Moves pieces found here from other locations of the branch, sets weighed lots to the scale weight, and writes off missing pieces only if `writeOffMissing`. One stock-count adjustment. Owner and branch admin only.
+     * `POST /api/stock/counts/:id/post`
+     * Requires `stock.count.post`.
+     */
+    postStockCountsByIdPost(params: { id: string }, body: {
+      writeOffMissing?: boolean;
+      note: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/counts/${encodeURIComponent(params.id)}/post`, { body });
+    },
+    /**
+     * Cancel a count
+     *
+     * Nothing changes in stock.
+     * `POST /api/stock/counts/:id/cancel`
+     * Requires `stock.count.create`.
+     */
+    postStockCountsByIdCancel(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/counts/${encodeURIComponent(params.id)}/cancel`);
+    },
+    /**
+     * Tag pieces
+     *
+     * Creates the pieces, their HUID records and their opening stock, all or nothing. The pieces join the tag print queue.
+     * `POST /api/tagging/pieces`
      * Requires `tagging.create`.
      */
-    postTaggingQueue(body: {
+    postTaggingPieces(body: {
+      pieces: Array<{
+        itemId: string;
+        purityId: string;
+        locationId: string;
+        /** As on the scale. */
+        grossWeight: string;
+        /** Grams, as a string. */
+        stoneWeight?: string;
+        /** Grams, as a string. */
+        otherWeight?: string;
+        stoneCount?: number;
+        /** Rupees, as a string. Never a float. */
+        stoneValue?: string;
+        huid?: string;
+        hallmarkCentre?: string;
+        /** Rupees, as a string. Never a float. */
+        costValue?: string;
+        /** Rupees, as a string. Never a float. */
+        makingCost?: string;
+        supplierId?: string;
+        /** Leave out to take the next tag number. */
+        tagNumber?: string;
+      }>;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('POST', "/api/tagging/pieces", { body });
+    },
+    /**
+     * Print tags
+     *
+     * Logs the print against the design used, takes the pieces out of the print queue, and returns the values for each label. The browser draws and prints them. A queue print refuses pieces already printed (someone else printed them a moment ago) and names who and when; `reprint: true` prints a tag again on purpose.
+     * `POST /api/tagging/print`
+     * Requires `tagging.create`.
+     */
+    postTaggingPrint(body: {
       templateId: string;
-      branchId: string;
       pieceIds: Array<string>;
-      copies?: number;
+      reprint?: boolean;
+    }): Promise<{
+      jobId: string;
+      labels: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      jobId: string;
+      labels: Array<Record<string, unknown>>;
+    }>('POST', "/api/tagging/print", { body });
+    },
+    /**
+     * List tag designs
+     *
+     * Paginated. `total` is the count before paging, for the pager.
+     * `GET /api/tagging/templates`
+     * Requires `tagging.template.view`.
+     */
+    getTaggingTemplates(query?: {
+      /** Matches nothing. */
+      search?: string;
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }>('GET', "/api/tagging/templates", { query });
+    },
+    /**
+     * Get one tag design
+     *
+     * `GET /api/tagging/templates/:id`
+     * Requires `tagging.template.view`.
+     */
+    getTaggingTemplatesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/tagging/templates/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Create a tag design
+     *
+     * `POST /api/tagging/templates`
+     * Requires `tagging.template.create`.
+     */
+    postTaggingTemplates(body: {
+      code: string;
+      name: string;
+      /** Size and margins in mm, as the designer keeps them. */
+      page: Record<string, unknown>;
+      /** The Fabric canvas. */
+      canvas_json: string;
+      /** Which field each text object prints. */
+      bindings: Array<Record<string, unknown>>;
+      is_default?: boolean;
+      is_active?: boolean;
     }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/tagging/queue", { body });
+      return request<Record<string, unknown>>('POST', "/api/tagging/templates", { body });
+    },
+    /**
+     * Update a tag design
+     *
+     * Only the fields you send are changed.
+     * `PATCH /api/tagging/templates/:id`
+     * Requires `tagging.template.update`.
+     */
+    patchTaggingTemplatesById(params: { id: string }, body: {
+      name?: string;
+      /** Size and margins in mm, as the designer keeps them. */
+      page?: Record<string, unknown>;
+      /** The Fabric canvas. */
+      canvas_json?: string;
+      /** Which field each text object prints. */
+      bindings?: Array<Record<string, unknown>>;
+      is_default?: boolean;
+      is_active?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/tagging/templates/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Remove a tag design
+     *
+     * Soft delete — the row stays for the audit trail and disappears from lists.
+     * `DELETE /api/tagging/templates/:id`
+     * Requires `tagging.template.delete`.
+     */
+    deleteTaggingTemplatesById(params: { id: string }): Promise<void> {
+      return request<void>('DELETE', `/api/tagging/templates/${encodeURIComponent(params.id)}`);
     },
     /**
      * Create an old-gold appraisal voucher
@@ -1850,6 +2954,8 @@ export function createClient(options: ClientOptions) {
       /** Matches batch_number. */
       search?: string;
       status?: "open" | "sent" | "melted" | "received" | "closed";
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -1929,6 +3035,8 @@ export function createClient(options: ClientOptions) {
       /** Matches code, name. */
       search?: string;
       is_active?: boolean;
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -2270,41 +3378,223 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/accounts/karigar-ledger", { query });
     },
     /**
-     * The four roles and what each can do
+     * Every permission a role can be given, grouped by module
      *
-     * Reference only. Roles are fixed in code and assigned by the super admin — there is no endpoint here to assign one.
-     * `GET /api/settings/roles`
-     * Requires `settings.users.view`.
+     * `GET /api/settings/permissions`
+     * Requires `settings.roles.view`.
      */
-    getSettingsRoles(): Promise<{
-      roles: Array<Record<string, unknown>>;
-      /** Always empty — tenants do not assign roles. */
-      assignable: Array<string>;
+    getSettingsPermissions(): Promise<{
+      permissions: Array<Record<string, unknown>>;
     }> {
       return request<{
-      roles: Array<Record<string, unknown>>;
-      /** Always empty — tenants do not assign roles. */
-      assignable: Array<string>;
+      permissions: Array<Record<string, unknown>>;
+    }>('GET', "/api/settings/permissions");
+    },
+    /**
+     * This business's roles, their permissions and how many people hold each
+     *
+     * `GET /api/settings/roles`
+     * Requires `settings.roles.view`.
+     */
+    getSettingsRoles(): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
     }>('GET', "/api/settings/roles");
     },
     /**
-     * Who works in this business
+     * Create a role
      *
-     * Read-only. Ask the super admin to add or change anyone.
+     * `POST /api/settings/roles`
+     * Requires `settings.roles.manage`.
+     */
+    postSettingsRoles(body: {
+      name: string;
+      description?: string | null;
+      permissions: Array<string>;
+    }): Promise<{
+      id: string;
+    }> {
+      return request<{
+      id: string;
+    }>('POST', "/api/settings/roles", { body });
+    },
+    /**
+     * Rename a role, change its permissions, or disable it
+     *
+     * Changing permissions takes effect for everyone holding the role within a minute.
+     * `PUT /api/settings/roles/:id`
+     * Requires `settings.roles.manage`.
+     */
+    putSettingsRolesById(params: { id: string }, body: {
+      name?: string;
+      description?: string | null;
+      permissions?: Array<string>;
+      isActive?: boolean;
+    }): Promise<void> {
+      return request<void>('PUT', `/api/settings/roles/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Delete a custom role that nobody holds
+     *
+     * `DELETE /api/settings/roles/:id`
+     * Requires `settings.roles.manage`.
+     */
+    deleteSettingsRolesById(params: { id: string }): Promise<void> {
+      return request<void>('DELETE', `/api/settings/roles/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Who works in this business, and their roles at each branch
+     *
      * `GET /api/settings/users`
      * Requires `settings.users.view`.
      */
     getSettingsUsers(query?: {
       search?: string;
-      role?: "admin" | "sales" | "accountant" | "storekeeper";
-      isActive?: boolean;
+      roleId?: string;
       branchId?: string;
+      isActive?: "true" | "false";
     }): Promise<{
       rows: Array<Record<string, unknown>>;
     }> {
       return request<{
       rows: Array<Record<string, unknown>>;
     }>('GET', "/api/settings/users", { query });
+    },
+    /**
+     * Add a staff member
+     *
+     * Leave `password` empty to generate a temporary one — it is returned once and the user must change it at first sign-in.
+     * `POST /api/settings/users`
+     * Requires `settings.users.manage`.
+     */
+    postSettingsUsers(body: {
+      fullName: string;
+      email?: string | null;
+      phone?: string | null;
+      password?: string;
+      defaultBranchId?: string | null;
+      assignments: Array<{
+        roleId: string;
+        /** Null = every branch. */
+        branchId: string | null;
+      }>;
+    }): Promise<{
+      id: string;
+      temporaryPassword: unknown;
+    }> {
+      return request<{
+      id: string;
+      temporaryPassword: unknown;
+    }>('POST', "/api/settings/users", { body });
+    },
+    /**
+     * Edit a staff member's name, contact or default branch
+     *
+     * `PATCH /api/settings/users/:id`
+     * Requires `settings.users.manage`.
+     */
+    patchSettingsUsersById(params: { id: string }, body: {
+      fullName?: string;
+      email?: string | null;
+      phone?: string | null;
+      defaultBranchId?: string | null;
+    }): Promise<void> {
+      return request<void>('PATCH', `/api/settings/users/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Replace a staff member's roles
+     *
+     * Send the complete list. Takes effect within a minute.
+     * `PUT /api/settings/users/:id/roles`
+     * Requires `settings.users.manage`.
+     */
+    putSettingsUsersByIdRoles(params: { id: string }, body: {
+      assignments: Array<{
+        roleId: string;
+        /** Null = every branch. */
+        branchId: string | null;
+      }>;
+    }): Promise<void> {
+      return request<void>('PUT', `/api/settings/users/${encodeURIComponent(params.id)}/roles`, { body });
+    },
+    /**
+     * Activate or deactivate a staff member
+     *
+     * Deactivating signs them out everywhere immediately.
+     * `POST /api/settings/users/:id/status`
+     * Requires `settings.users.manage`.
+     */
+    postSettingsUsersByIdStatus(params: { id: string }, body: {
+      isActive: boolean;
+    }): Promise<void> {
+      return request<void>('POST', `/api/settings/users/${encodeURIComponent(params.id)}/status`, { body });
+    },
+    /**
+     * Give a staff member a new temporary password
+     *
+     * Signs them out everywhere and unlocks the account. The temporary password is returned once.
+     * `POST /api/settings/users/:id/reset-password`
+     * Requires `settings.users.manage`.
+     */
+    postSettingsUsersByIdResetpassword(params: { id: string }): Promise<{
+      temporaryPassword: string;
+    }> {
+      return request<{
+      temporaryPassword: string;
+    }>('POST', `/api/settings/users/${encodeURIComponent(params.id)}/reset-password`);
+    },
+    /**
+     * Price lines exactly as billing will — nothing is saved
+     *
+     * For live totals while a bill or order is being built. Posting a document always re-prices on the server; the client's numbers are never trusted.
+     * `POST /api/pricing/preview`
+     * Requires `pos.view`.
+     */
+    postPricingPreview(body: {
+      customerStateCode?: string | null;
+      lines: Array<{
+        metalId: string;
+        purityId: string;
+        itemId?: string | null;
+        categoryId?: string | null;
+        hsnCode?: unknown;
+        quantity?: number;
+        grossWeightG: string;
+        stoneWeightG?: string;
+        otherWeightG?: string;
+        stoneAmount?: string;
+        hallmarkAmount?: string;
+        discount?: {
+          amount: string;
+          on: "making" | "total";
+        } | null;
+        override?: {
+          ratePerGram?: string;
+          making?: {
+            id?: null;
+            basis: "per_gram" | "percent" | "flat" | "slab" | "hybrid";
+            rate: string | null;
+            flatAmount?: string | null;
+            slabs?: Array<{
+              fromG: string;
+              toG: string | null;
+              rate: string;
+            }>;
+            slabMode?: "whole" | "tiered";
+            minimumAmount?: string | null;
+          };
+        };
+      }>;
+    }): Promise<{
+      lines: Array<Record<string, unknown>>;
+      totals: Record<string, unknown>;
+    }> {
+      return request<{
+      lines: Array<Record<string, unknown>>;
+      totals: Record<string, unknown>;
+    }>('POST', "/api/pricing/preview", { body });
     },
     /**
      * Super admin sign-in
@@ -2556,11 +3846,12 @@ export function createClient(options: ClientOptions) {
      * Requires `platform.tenants.update`.
      */
     postPlatformTenantsByIdUsers(params: { id: string }, body: {
-      email: string;
+      email?: string | null;
+      phone?: unknown;
       fullName: string;
       password: string;
-      role: "admin" | "sales" | "accountant" | "storekeeper";
-      phone?: string;
+      roleCode?: string;
+      role?: string;
       /** Their branch. Omit to cover all branches. */
       branchId?: string;
     }): Promise<Record<string, unknown>> {
@@ -2574,7 +3865,8 @@ export function createClient(options: ClientOptions) {
      * Requires `platform.tenants.update`.
      */
     patchPlatformTenantsByIdUsersByUserId(params: { id: string; userId: string }, body: {
-      role?: "admin" | "sales" | "accountant" | "storekeeper";
+      roleCode?: string;
+      role?: string;
       /** Null moves them to all branches. */
       branchId?: string | null;
       isActive?: boolean;

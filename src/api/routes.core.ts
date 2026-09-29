@@ -1,150 +1,173 @@
 /** Auth, tenancy, settings and dashboard endpoints. */
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { defineRoute } from '../core/http/route-registry.js';
 import { transaction } from '../core/db/client.js';
 import { repo } from '../core/db/repository.js';
-import { changeOwnPassword, login, refreshSession, revokeRefreshToken } from '../modules/identity/auth.service.js';
-import { catalogFor, LICENCE_STATES, MODULE_CATALOG, type LicenceState, type TenantKind, type TenantModuleState } from '../modules/tenancy/module-catalog.js';
+import { isProduction } from '../core/config/env.js';
+import { limitFailures } from '../core/http/rate-limit.js';
+import { UnauthorizedError } from '../core/errors/app-error.js';
+import {
+  changeOwnPassword, login, refreshSession, revokeRefreshToken, SESSION_HOURS, type Tokens,
+} from '../modules/identity/auth.service.js';
+import { describeSession } from '../modules/identity/access.service.js';
+import { LICENCE_STATES, MODULE_CATALOG } from '../modules/tenancy/module-catalog.js';
 import { describeConfig, setConfig } from '../core/config/config-service.js';
-import { errorEnvelope, idParam, ok, record, uuid } from './schemas.js';
+import { errorEnvelope, ok, record, uuid } from './schemas.js';
 import { param } from '../core/http/middleware.js';
 
 const TODAY = '2026-09-18';
+const LOGIN_DAY = '2026-09-28';
 
 /* ------------------------------------------------------------------ auth */
 
+/**
+ * The refresh token lives in an httpOnly cookie, so page scripts never see it.
+ * The app is served with the API on its own origin (Vite proxy in development,
+ * a rewrite in production), which keeps the cookie first-party everywhere,
+ * including Safari.
+ */
+const COOKIE = 'ks_rt';
+const cookieOptions = { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/api' } as const;
+
+const readRefreshCookie = (req: Request): string | undefined =>
+  req.headers.cookie?.match(/(?:^|;\s*)ks_rt=([A-Za-z0-9_-]+)/)?.[1];
+
+function sendTokens(res: Response, tokens: Tokens): string {
+  res.cookie(COOKIE, tokens.refreshToken, {
+    ...cookieOptions,
+    ...(tokens.persistent ? { maxAge: SESSION_HOURS.persistent * 3_600_000 } : {}),
+  });
+  return tokens.accessToken;
+}
+
+const meta = (req: Request) => ({ userAgent: req.headers['user-agent'], ip: req.ip });
+
+const session = z.object({
+  user: z.object({
+    id: uuid, fullName: z.string(), email: z.string().nullable(), phone: z.string().nullable(),
+    mustChangePassword: z.boolean().describe('True: show only the change-password screen; every other call is refused until it is done.'),
+  }),
+  tenant: z.object({ id: uuid, code: z.string(), name: z.string(), kind: z.string(), status: z.string() }),
+  branchId: uuid.nullable().describe('The branch this session works in. Send it back as `X-Branch-Id`.'),
+  branches: z.array(z.object({ id: uuid, code: z.string(), name: z.string() })),
+  roles: z.array(z.string()),
+  permissions: z.array(z.string()).describe('At the active branch. `*` or `module.*` are wildcards.'),
+  modules: z.array(z.object({
+    key: z.string(), order: z.number(), group: z.string(), name: z.string(), shortName: z.string(),
+    description: z.string(), statusLabel: z.string(),
+    licence: z.enum(LICENCE_STATES), locked: z.boolean().describe('Held but lapsed: show disabled, with a renew prompt.'),
+    trialEndsAt: z.string().nullable(), expiresAt: z.string().nullable(),
+    subModules: z.array(z.object({ key: z.string(), name: z.string(), status: z.string() })),
+  })).describe('Modules this shop may see. Absent means never shown.'),
+  theme: z.object({ preset_key: z.string(), css_variables: record, logo_url: z.string().nullable() }),
+});
+const accessToken = z.string().describe('Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only.');
+const cookieNote = 'The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: "include"`.';
+
 defineRoute({
   method: 'post', path: '/api/auth/login', module: 'identity', auth: false,
-  summary: 'Sign in and receive tokens',
-  description:
-    'Returns a short-lived access token plus a long-lived refresh token. Send the access token as `Authorization: Bearer <token>` on every other call. The same message is returned for a wrong email and a wrong password, so the response cannot be used to discover which accounts exist.',
+  summary: 'Sign in',
+  description: `Returns an access token and the whole session, so the app can render straight away. ${cookieNote} After 20 failed attempts in a minute from one network for one shop, further attempts are refused for the rest of that minute.`,
   body: z.object({
-    tenantCode: z.string().min(1).describe('The tenant slug, e.g. "aarohi".'),
-    identifier: z.string().min(3).describe('Email address or mobile number.'),
-    password: z.string().min(1),
+    tenantCode: z.string().trim().min(1).max(40).describe('The shop code, e.g. "aarohi".'),
+    identifier: z.string().trim().min(3).max(120).describe('Email address or mobile number.'),
+    password: z.string().min(1).max(128),
+    remember: z.boolean().default(true).describe('true: signed in for 30 days on this device. false: until the browser closes (12 hours at most).'),
   }),
+  middleware: [limitFailures({
+    limit: 20, windowMs: 60_000,
+    key: (req) => `${req.ip}|${String(req.body.tenantCode).toLowerCase()}`,
+    message: 'Too many failed sign-in attempts. Wait a minute and try again.',
+  })],
   responses: [
-    { status: 200, description: 'Signed in.', schema: z.object({
-        accessToken: z.string(), refreshToken: z.string(),
-        user: z.object({ id: uuid, email: z.string().nullable(), phone: z.string().nullable(), fullName: z.string(), branchId: uuid.nullable(), mustChangePassword: z.boolean() }),
-        branches: z.array(z.object({ id: uuid, code: z.string(), name: z.string() })),
-        tenant: z.object({ id: uuid, code: z.string(), name: z.string(), kind: z.string() }),
-        roles: z.array(z.string()), permissions: z.array(z.string()),
-      }) },
-    { status: 401, description: 'Wrong credentials, locked account, or inactive tenant.', schema: errorEnvelope },
+    { status: 200, description: 'Signed in.', schema: z.object({ accessToken, session }) },
+    { status: 401, description: 'See `error.code`: invalid_credentials, account_locked, account_inactive, tenant_inactive, no_branch.', schema: errorEnvelope },
+    { status: 429, description: 'rate_limited.', schema: errorEnvelope },
   ],
   changelog: [
+    { date: LOGIN_DAY, kind: 'changed', note: 'Refresh token moved to an httpOnly cookie. Response is now { accessToken, session }. Added `remember`. Failures carry specific codes.' },
     { date: '2026-09-26', kind: 'changed', note: 'Sign in with email or mobile; returns accessible branches. Permissions resolved from tenant roles.' },
     { date: TODAY, kind: 'added', note: 'Initial sign-in endpoint.' },
   ],
-  handler: async (req) => login(req.body.tenantCode, req.body.identifier, req.body.password, {
-    userAgent: req.headers['user-agent'], ip: req.ip,
-  }),
+  handler: async (req, res) => {
+    const { session: s, ...tokens } = await login(req.body, meta(req));
+    return { accessToken: sendTokens(res, tokens), session: s };
+  },
 });
 
 defineRoute({
   method: 'post', path: '/api/auth/refresh', module: 'identity', auth: false,
-  summary: 'Exchange a refresh token for a new access token',
-  body: z.object({ refreshToken: z.string().min(1) }),
+  summary: 'Get a new access token',
+  description: 'Uses the `ks_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.',
   responses: [
-    { status: 200, description: 'New access token and a rotated refresh token. The old refresh token is now invalid.', schema: z.object({ accessToken: z.string(), refreshToken: z.string() }) },
-    { status: 401, description: 'Refresh token expired or revoked — sign in again.', schema: errorEnvelope },
+    { status: 200, description: 'A fresh access token; the cookie is rotated.', schema: z.object({ accessToken }) },
+    { status: 401, description: 'session_expired, account_inactive or tenant_inactive — go to sign in and show the message.', schema: errorEnvelope },
   ],
   changelog: [
+    { date: LOGIN_DAY, kind: 'changed', note: 'Reads the refresh token from the cookie instead of the body. 30-second grace for retries and parallel tabs.' },
     { date: '2026-09-26', kind: 'changed', note: 'Refresh tokens now rotate; reuse of an old token revokes the session.' },
     { date: TODAY, kind: 'added', note: 'Initial refresh endpoint.' },
   ],
-  handler: async (req) => refreshSession(req.body.refreshToken, { userAgent: req.headers['user-agent'], ip: req.ip }),
+  handler: async (req, res) => {
+    const token = readRefreshCookie(req);
+    if (!token) throw new UnauthorizedError('Please sign in.', 'session_expired');
+    return { accessToken: sendTokens(res, await refreshSession(token, meta(req))) };
+  },
 });
 
 defineRoute({
   method: 'post', path: '/api/auth/logout', module: 'identity', auth: false,
-  summary: 'Revoke a refresh token',
-  body: z.object({ refreshToken: z.string().min(1) }),
-  responses: [{ status: 204, description: 'Revoked.' }],
-  changelog: [{ date: TODAY, kind: 'added', note: 'Initial logout endpoint.' }],
-  handler: async (req, res) => { await revokeRefreshToken(req.body.refreshToken); res.status(204).end(); },
+  summary: 'Sign out',
+  description: 'Ends this sign-in on every tab and clears the cookie. Safe to call when already signed out.',
+  responses: [{ status: 204, description: 'Signed out.' }],
+  changelog: [
+    { date: LOGIN_DAY, kind: 'changed', note: 'Uses the cookie; ends the whole sign-in, not just one token.' },
+    { date: TODAY, kind: 'added', note: 'Initial logout endpoint.' },
+  ],
+  handler: async (req, res) => {
+    const token = readRefreshCookie(req);
+    if (token) await revokeRefreshToken(token);
+    res.clearCookie(COOKIE, cookieOptions).status(204).end();
+  },
 });
 
 defineRoute({
   method: 'post', path: '/api/me/password', module: 'identity',
   summary: 'Change your own password',
-  description: 'Signs out every other device and returns a fresh session for this one.',
+  description: `Signs out every other device and returns a new access token for this one. ${cookieNote}`,
   body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(128) }),
   responses: [
-    { status: 200, description: 'Changed.', schema: z.object({ accessToken: z.string(), refreshToken: z.string() }) },
+    { status: 200, description: 'Changed.', schema: z.object({ accessToken }) },
     { status: 400, description: 'Current password is wrong, or the new one is the same.', schema: errorEnvelope },
   ],
-  changelog: [{ date: '2026-09-26', kind: 'added', note: 'Self-service password change; required when mustChangePassword is true.' }],
-  handler: async (req) => changeOwnPassword(req.body.currentPassword, req.body.newPassword, {
-    userAgent: req.headers['user-agent'], ip: req.ip,
+  changelog: [
+    { date: LOGIN_DAY, kind: 'changed', note: 'Returns { accessToken }; the refresh token is set as a cookie and keeps its remember-me setting.' },
+    { date: '2026-09-26', kind: 'added', note: 'Self-service password change; required when mustChangePassword is true.' },
+  ],
+  handler: async (req, res) => ({
+    accessToken: sendTokens(res, await changeOwnPassword(
+      req.body.currentPassword, req.body.newPassword, readRefreshCookie(req), meta(req),
+    )),
   }),
 });
 
 defineRoute({
   method: 'get', path: '/api/me', module: 'identity',
-  summary: 'Current user, active branch, and what they can do there',
-  description: 'Send `x-branch-id` to ask about a specific branch. Call this after switching branch to refresh the UI permissions.',
+  summary: 'The session: user, shop, branch, permissions, modules and theme',
+  description: 'The same `session` sign-in returns. Call it when the app opens, and with `X-Branch-Id` after switching branch.',
   responses: [
-    { status: 200, description: 'Access for the active branch.', schema: z.object({
-        userId: uuid, branchId: uuid.nullable(),
-        branches: z.array(z.object({ id: uuid, code: z.string(), name: z.string() })),
-        roles: z.array(z.string()), permissions: z.array(z.string()),
-        mustChangePassword: z.boolean(),
-      }) },
-    { status: 403, description: 'The requested branch is not assigned to this user.', schema: errorEnvelope },
+    { status: 200, description: 'The session at the active branch.', schema: session },
+    { status: 403, description: 'branch_forbidden — that branch is not assigned to this user; call again without `X-Branch-Id`.', schema: errorEnvelope },
   ],
-  changelog: [{ date: '2026-09-26', kind: 'added', note: 'Branch-aware access endpoint.' }],
-  handler: async (req) => ({
-    userId: req.ctx!.userId, branchId: req.ctx!.branchId, branches: req.accessInfo!.branches,
-    roles: req.ctx!.roles, permissions: [...req.ctx!.permissions],
-    mustChangePassword: req.accessInfo!.mustChangePassword,
-  }),
+  changelog: [
+    { date: LOGIN_DAY, kind: 'changed', note: 'Now returns the full session (user, shop, modules, theme) — replaces GET /api/tenancy/modules.' },
+    { date: '2026-09-26', kind: 'added', note: 'Branch-aware access endpoint.' },
+  ],
+  handler: async (req) => transaction((tx) => describeSession(tx, req.accessInfo!, req.ctx!.branchId)),
 });
 
 /* -------------------------------------------------------------- tenancy */
-
-defineRoute({
-  method: 'get', path: '/api/tenancy/modules', module: 'platform',
-  summary: 'Modules, licences and theme for the signed-in tenant',
-  description:
-    'Everything the module dock needs in one call. `locked: true` means the tenant holds the module but the licence has lapsed — show it, disabled, with a renew prompt. Modules the tenant should not see at all are simply absent.',
-  responses: [
-    { status: 200, description: 'The dock.', schema: z.object({
-        tenant: z.object({ code: z.string(), name: z.string(), kind: z.string(), status: z.string() }),
-        theme: z.object({ preset_key: z.string(), css_variables: record, logo_url: z.string().nullable() }),
-        modules: z.array(z.object({
-          key: z.string(), order: z.number(), group: z.string(), name: z.string(), shortName: z.string(),
-          description: z.string(), statusLabel: z.string(),
-          licence: z.enum(LICENCE_STATES), locked: z.boolean(),
-          trialEndsAt: z.string().nullable(), expiresAt: z.string().nullable(),
-          subModules: z.array(z.object({ key: z.string(), name: z.string(), status: z.string() })),
-        })),
-      }) },
-  ],
-  changelog: [
-    { date: TODAY, kind: 'added', note: 'Returns modules with licence state and theme.' },
-    { date: TODAY, kind: 'changed', note: 'Added `locked` and `trialEndsAt` so the UI can show trial countdowns.' },
-  ],
-  handler: async () => transaction(async (tx) => {
-    const tenant = await tx.one<{ kind: TenantKind; display_name: string; code: string; status: string }>(
-      `select kind, display_name, code, status from tenant where id = $1`, [tx.context.tenantId]);
-    const rows = await tx.query<{ module_key: string; enabled: boolean; licence: LicenceState;
-      trial_ends_at: string | null; expires_at: string | null; disabled_submodules: string[] }>(
-      `select module_key, enabled, licence, trial_ends_at, expires_at, disabled_submodules from tenant_module`);
-    const states = new Map<string, TenantModuleState>(rows.map((r) => [r.module_key, {
-      enabled: r.enabled, licence: r.licence, trialEndsAt: r.trial_ends_at,
-      expiresAt: r.expires_at, disabled: r.disabled_submodules ?? [],
-    }]));
-    const theme = await tx.maybeOne(`select preset_key, css_variables, logo_url from tenant_theme
-      where branch_id is null and is_active = true limit 1`);
-    return {
-      tenant: { code: tenant.code, name: tenant.display_name, kind: tenant.kind, status: tenant.status },
-      theme: theme ?? { preset_key: 'deep-forest', css_variables: {}, logo_url: null },
-      modules: catalogFor(tenant.kind, states),
-    };
-  }),
-});
 
 defineRoute({
   method: 'get', path: '/api/tenancy/catalog', module: 'platform',

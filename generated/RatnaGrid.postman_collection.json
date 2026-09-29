@@ -2,7 +2,7 @@
   "info": {
     "name": "RatnaGrid API",
     "_postman_id": "ratnagrid-api-collection",
-    "description": "# RatnaGrid API\n\nGenerated from the running server on 2026-09-20.\n122 endpoints.\n\n## Start here\n\n1. Set `baseUrl` — it defaults to the deployed backend.\n2. **Super admin work:** run `Platform Operator → POST platform/auth/login`.\n   The token is saved automatically into `platformToken`.\n3. **Shop staff work:** run `Settings → POST auth/login` with a `tenantCode`.\n   That token is saved into `token`, and the branch into `branchId`.\n\nEvery other request picks the right token up by itself.\n\n## Why two logins\n\nA super admin has no tenant, so they sign in with just email and password.\nShop staff belong to one business, so they also send `tenantCode` — that is\nwhat tells the server which shop `rajesh@gmail.com` works at.\n\n## Variables\n\n- `baseUrl` — the server\n- `platformToken` / `token` — filled in by the two logins\n- `tenantId`, `branchId`, `id` — fill these in as you go\n- `today`, `nowIso` — set automatically before each request",
+    "description": "# RatnaGrid API\n\nGenerated from the running server on 2026-09-29.\n178 endpoints.\n\n## Start here\n\n1. Set `baseUrl` — it defaults to the deployed backend.\n2. **Super admin work:** run `Platform Operator → POST platform/auth/login`.\n   The token is saved automatically into `platformToken`.\n3. **Shop staff work:** run `Settings → POST auth/login` with a `tenantCode`.\n   That token is saved into `token`, and the branch into `branchId`.\n\nEvery other request picks the right token up by itself.\n\n## Why two logins\n\nA super admin has no tenant, so they sign in with just email and password.\nShop staff belong to one business, so they also send `tenantCode` — that is\nwhat tells the server which shop `rajesh@gmail.com` works at.\n\n## Variables\n\n- `baseUrl` — the server\n- `platformToken` / `token` — filled in by the two logins\n- `tenantId`, `branchId`, `id` — fill these in as you go\n- `today`, `nowIso` — set automatically before each request",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -706,7 +706,7 @@
             "description": "Only you can do this — nobody inside the business can create users. Give `branchId` to place the person at one branch; leave it out and they cover all branches. A branch has exactly one admin, so creating a second one for the same branch is refused with `409` naming whoever already holds the slot.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `201` — User created.\n- `409` — Email already used here, or that branch already has an admin.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"someone@example.com\",\n  \"fullName\": \"Example name\",\n  \"password\": \"changeme123\",\n  \"role\": \"admin\",\n  \"phone\": \"9820011223\",\n  \"branchId\": \"{{branchId}}\"\n}",
+              "raw": "{\n  \"email\": \"someone@example.com\",\n  \"phone\": \"9820011223\",\n  \"fullName\": \"Example name\",\n  \"password\": \"changeme123\",\n  \"roleCode\": \"sales\",\n  \"role\": \"text\",\n  \"branchId\": \"{{branchId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -748,7 +748,7 @@
             "description": "Moving someone to `admin`, or moving an existing admin to another branch, is refused if that branch already has one. The only admin in a business cannot be deactivated — the shop would be left with nobody able to run it.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Updated.\n- `409` — That branch already has an admin.\n- `422` — Would leave the business with no admin.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"role\": \"admin\",\n  \"branchId\": \"{{branchId}}\",\n  \"isActive\": false\n}",
+              "raw": "{\n  \"roleCode\": \"CODE01\",\n  \"role\": \"text\",\n  \"branchId\": \"{{branchId}}\",\n  \"isActive\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -788,37 +788,6 @@
             "description": "Every module the platform offers. Used by the SaaS admin screen when provisioning.\n\n**Permission:** `platform.tenants.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — All modules."
           },
           "response": []
-        },
-        {
-          "name": "GET tenancy/modules",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/tenancy/modules",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "tenancy",
-                "modules"
-              ],
-              "query": []
-            },
-            "description": "Everything the module dock needs in one call. `locked: true` means the tenant holds the module but the licence has lapsed — show it, disabled, with a renew prompt. Modules the tenant should not see at all are simply absent.\n\n**Permission:** none\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The dock."
-          },
-          "response": []
         }
       ]
     },
@@ -826,131 +795,6 @@
       "name": "Settings & Theme Studio",
       "description": "CSS theme variables, luxury presets, approval workflows & branch parameters.",
       "item": [
-        {
-          "name": "POST auth/login",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ],
-              "query": []
-            },
-            "description": "Returns a short-lived access token plus a long-lived refresh token. Send the access token as `Authorization: Bearer <token>` on every other call. The same message is returned for a wrong email and a wrong password, so the response cannot be used to discover which accounts exist.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — Signed in.\n- `401` — Wrong credentials, locked account, or inactive tenant.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"tenantCode\": \"CODE01\",\n  \"email\": \"someone@example.com\",\n  \"password\": \"changeme123\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body && body.accessToken) {",
-                  "  pm.collectionVariables.set(\"token\", body.accessToken);",
-                  "  if (body.refreshToken) pm.collectionVariables.set(\"refreshToken\", body.refreshToken);",
-                  "  console.log(\"Saved token\");",
-                  "}",
-                  "if (body && body.user && body.user.branchId) {",
-                  "  pm.collectionVariables.set(\"branchId\", body.user.branchId);",
-                  "}",
-                  "if (body && body.tenantId) pm.collectionVariables.set(\"tenantId\", body.tenantId);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST auth/logout",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/logout",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "logout"
-              ],
-              "query": []
-            },
-            "description": "Revoke a refresh token\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `204` — Revoked.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"text\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "POST auth/refresh",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/refresh",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "refresh"
-              ],
-              "query": []
-            },
-            "description": "Exchange a refresh token for a new access token\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — New access token.\n- `401` — Refresh token expired or revoked — sign in again.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"text\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
         {
           "name": "GET settings/config",
           "request": {
@@ -1028,6 +872,37 @@
           "response": []
         },
         {
+          "name": "GET settings/permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "permissions"
+              ],
+              "query": []
+            },
+            "description": "Every permission a role can be given, grouped by module\n\n**Permission:** `settings.roles.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Catalog."
+          },
+          "response": []
+        },
+        {
           "name": "GET settings/roles",
           "request": {
             "method": "GET",
@@ -1054,7 +929,128 @@
               ],
               "query": []
             },
-            "description": "Reference only. Roles are fixed in code and assigned by the super admin — there is no endpoint here to assign one.\n\n**Permission:** `settings.users.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Roles."
+            "description": "This business's roles, their permissions and how many people hold each\n\n**Permission:** `settings.roles.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Roles."
+          },
+          "response": []
+        },
+        {
+          "name": "POST settings/roles",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "roles"
+              ],
+              "query": []
+            },
+            "description": "Create a role\n\n**Permission:** `settings.roles.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Created.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"description\": \"text\",\n  \"permissions\": [\n    \"text\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE settings/roles/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/roles/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "roles",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Delete a custom role that nobody holds\n\n**Permission:** `settings.roles.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Deleted."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT settings/roles/:id",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/roles/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "roles",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Changing permissions takes effect for everyone holding the role within a minute.\n\n**Permission:** `settings.roles.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"description\": \"text\",\n  \"permissions\": [\n    \"text\"\n  ],\n  \"isActive\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         },
@@ -1166,14 +1162,8 @@
                   "description": ""
                 },
                 {
-                  "key": "role",
-                  "value": "admin",
-                  "disabled": true,
-                  "description": ""
-                },
-                {
-                  "key": "isActive",
-                  "value": "false",
+                  "key": "roleId",
+                  "value": "{{roleId}}",
                   "disabled": true,
                   "description": ""
                 },
@@ -1182,10 +1172,230 @@
                   "value": "{{branchId}}",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "disabled": true,
+                  "description": ""
                 }
               ]
             },
-            "description": "Read-only. Ask the super admin to add or change anyone.\n\n**Permission:** `settings.users.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Staff."
+            "description": "Who works in this business, and their roles at each branch\n\n**Permission:** `settings.users.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Staff."
+          },
+          "response": []
+        },
+        {
+          "name": "POST settings/users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "users"
+              ],
+              "query": []
+            },
+            "description": "Leave `password` empty to generate a temporary one — it is returned once and the user must change it at first sign-in.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Created.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Example name\",\n  \"email\": \"someone@example.com\",\n  \"phone\": \"9820011223\",\n  \"password\": \"changeme123\",\n  \"defaultBranchId\": \"{{defaultBranchId}}\",\n  \"assignments\": [\n    {\n      \"roleId\": \"{{roleId}}\",\n      \"branchId\": \"{{branchId}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH settings/users/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/users/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "users",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Edit a staff member's name, contact or default branch\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Example name\",\n  \"email\": \"someone@example.com\",\n  \"phone\": \"9820011223\",\n  \"defaultBranchId\": \"{{defaultBranchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST settings/users/:id/reset-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/users/{{id}}/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "users",
+                "{{id}}",
+                "reset-password"
+              ],
+              "query": []
+            },
+            "description": "Signs them out everywhere and unlocks the account. The temporary password is returned once.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Reset."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT settings/users/:id/roles",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/users/{{id}}/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "users",
+                "{{id}}",
+                "roles"
+              ],
+              "query": []
+            },
+            "description": "Send the complete list. Takes effect within a minute.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assignments\": [\n    {\n      \"roleId\": \"{{roleId}}\",\n      \"branchId\": \"{{branchId}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST settings/users/:id/status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/users/{{id}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "users",
+                "{{id}}",
+                "status"
+              ],
+              "query": []
+            },
+            "description": "Deactivating signs them out everywhere immediately.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -1354,9 +1564,15 @@
                 },
                 {
                   "key": "is_active",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -1410,7 +1626,7 @@
             "description": "Create a branch\n\n**Permission:** `master.branch.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"kind\": \"showroom\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"state_code\": \"CODE01\",\n  \"address_line1\": \"text\",\n  \"city\": \"text\",\n  \"state\": \"text\",\n  \"pincode\": \"CODE01\",\n  \"phone\": \"9820011223\",\n  \"email\": \"someone@example.com\"\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"kind\": \"showroom\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"state_code\": \"CODE01\",\n  \"address_line1\": \"text\",\n  \"city\": \"text\",\n  \"state\": \"text\",\n  \"pincode\": \"CODE01\",\n  \"phone\": \"9820011223\",\n  \"email\": \"someone@example.com\",\n  \"is_head_office\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1519,7 +1735,7 @@
             "description": "Only the fields you send are changed.\n\n**Permission:** `master.branch.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"state_code\": \"CODE01\",\n  \"address_line1\": \"text\",\n  \"city\": \"text\",\n  \"phone\": \"9820011223\",\n  \"is_active\": false\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"state_code\": \"CODE01\",\n  \"address_line1\": \"text\",\n  \"city\": \"text\",\n  \"state\": \"text\",\n  \"pincode\": \"CODE01\",\n  \"phone\": \"9820011223\",\n  \"email\": \"someone@example.com\",\n  \"is_head_office\": false,\n  \"is_active\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1563,9 +1779,15 @@
                 },
                 {
                   "key": "is_active",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -1619,7 +1841,7 @@
             "description": "Create a category\n\n**Permission:** `master.item.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"parent_id\": \"{{parent_id}}\",\n  \"hsn_code\": \"CODE01\",\n  \"sort_order\": 0\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"parent_id\": \"{{parent_id}}\",\n  \"name\": \"Example name\",\n  \"hsn_code\": \"CODE01\",\n  \"sub_categories\": [],\n  \"applicable_metals\": [],\n  \"making_rule_id\": \"{{making_rule_id}}\",\n  \"sort_order\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1728,7 +1950,355 @@
             "description": "Only the fields you send are changed.\n\n**Permission:** `master.item.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"hsn_code\": \"CODE01\",\n  \"sort_order\": 1,\n  \"is_active\": false\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"hsn_code\": \"CODE01\",\n  \"sub_categories\": [\n    \"text\"\n  ],\n  \"applicable_metals\": [\n    \"text\"\n  ],\n  \"making_rule_id\": \"{{making_rule_id}}\",\n  \"sort_order\": 1,\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET master/document-formats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/document-formats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "document-formats"
+              ],
+              "query": []
+            },
+            "description": "A business that has none yet gets the six standard formats on first call.\n\n**Permission:** `master.documents.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Formats."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH master/document-formats/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/document-formats/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "document-formats",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Send only what changed. `field_toggles` is merged, so one switch can be sent on its own.\n\n**Permission:** `master.documents.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Saved.\n- `404` — Not found.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"text\",\n  \"paper_size\": \"A4\",\n  \"header_style\": \"logo_top\",\n  \"field_toggles\": {\n    \"showWeightBreakdown\": false,\n    \"showGstSplit\": false,\n    \"showHuidList\": false,\n    \"showQrCode\": false,\n    \"showBankDetails\": false,\n    \"showTermsAndConditions\": false,\n    \"showCashierSignature\": false,\n    \"showCustomerSignature\": false\n  },\n  \"terms\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET master/gst-rates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/gst-rates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "gst-rates"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "Matches hsn_code, description."
+                },
+                {
+                  "key": "hsn_code",
+                  "value": "CODE01",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "component",
+                  "value": "metal",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "code_type",
+                  "value": "hsn",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Paginated. `total` is the count before paging, for the pager.\n\n**Permission:** `master.tax.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Matching GST rates.\n- `403` — Missing permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST master/gst-rates",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/gst-rates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "gst-rates"
+              ],
+              "query": []
+            },
+            "description": "Create a GST rate\n\n**Permission:** `master.tax.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hsn_code\": \"CODE01\",\n  \"code_type\": \"hsn\",\n  \"description\": \"text\",\n  \"component\": \"metal\",\n  \"gst_rate\": \"6500.00\",\n  \"cess_rate\": \"6500.00\",\n  \"is_reverse_charge\": false,\n  \"effective_from\": \"{{today}}\",\n  \"source_note\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE master/gst-rates/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/gst-rates/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "gst-rates",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Hard delete. Fails if anything references it.\n\n**Permission:** `master.tax.delete`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Removed.\n- `409` — Referenced elsewhere — deactivate instead."
+          },
+          "response": []
+        },
+        {
+          "name": "GET master/gst-rates/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/gst-rates/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "gst-rates",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Get one GST rate\n\n**Permission:** `master.tax.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The GST rate.\n- `404` — Not found, or belongs to another tenant."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH master/gst-rates/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/gst-rates/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "gst-rates",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Only the fields you send are changed.\n\n**Permission:** `master.tax.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"text\",\n  \"source_note\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST master/import/:kind",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/import/{{kind}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "import",
+                "{{kind}}"
+              ],
+              "query": []
+            },
+            "description": "kind: customers, karigars, categories or items. Up to 1,000 rows a call; send a big file as several calls, passing `firstRow` so errors name the spreadsheet row. Matched on `code`: an existing code is updated and a blank cell keeps the saved value. Customers and karigars without a code get the next one. Items name their category, metal and purity by code (import categories first). Needs the create permission of that master.\n\n**Permission:** none\n**Auth:** shop staff token\n\n**Responses**\n- `200` — What happened to each row.\n- `403` — Missing the create permission for that master.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rows\": [\n    {}\n  ],\n  \"firstRow\": 2\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1768,7 +2338,7 @@
                   "key": "search",
                   "value": "text",
                   "disabled": true,
-                  "description": "Matches code, name."
+                  "description": "Matches code, name, hsn_code."
                 },
                 {
                   "key": "nature",
@@ -1784,7 +2354,7 @@
                 },
                 {
                   "key": "is_active",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
                 },
@@ -1793,6 +2363,12 @@
                   "value": "{{category_id}}",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -2005,9 +2581,15 @@
                 },
                 {
                   "key": "is_active",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -2061,7 +2643,7 @@
             "description": "Create a karigar\n\n**Permission:** `master.karigar.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"workshop_name\": \"Example name\",\n  \"engagement\": \"external\",\n  \"speciality\": \"text\",\n  \"phone\": \"9820011223\",\n  \"address\": \"text\",\n  \"pan\": \"AABCU9603R\",\n  \"standard_ghat_percent\": \"8\",\n  \"labour_rate_per_gram\": \"6500.00\"\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"workshop_name\": \"Example name\",\n  \"engagement\": \"external\",\n  \"speciality\": \"text\",\n  \"phone\": \"9820011223\",\n  \"address\": \"text\",\n  \"pan\": \"AABCU9603R\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"standard_ghat_percent\": \"8\",\n  \"labour_rate_per_gram\": \"6500.00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2170,7 +2752,7 @@
             "description": "Only the fields you send are changed.\n\n**Permission:** `master.karigar.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"speciality\": \"text\",\n  \"phone\": \"9820011223\",\n  \"standard_ghat_percent\": \"8\",\n  \"labour_rate_per_gram\": \"6500.00\",\n  \"is_active\": false\n}",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"workshop_name\": \"Example name\",\n  \"engagement\": \"text\",\n  \"speciality\": \"text\",\n  \"phone\": \"9820011223\",\n  \"address\": \"text\",\n  \"pan\": \"AABCU9603R\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"standard_ghat_percent\": \"8\",\n  \"labour_rate_per_gram\": \"6500.00\",\n  \"is_active\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2223,6 +2805,12 @@
                   "value": "counter",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -2428,6 +3016,12 @@
                   "description": "Matches code, name."
                 },
                 {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
+                },
+                {
                   "key": "limit",
                   "value": "50",
                   "disabled": true,
@@ -2599,6 +3193,82 @@
           "response": []
         },
         {
+          "name": "GET master/numbering",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/numbering",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "numbering"
+              ],
+              "query": []
+            },
+            "description": "One entry per document type. The preview is worked out by the same code that numbers real documents.\n\n**Permission:** `settings.numbering.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Series."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH master/numbering/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/numbering/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "numbering",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Shared: one counter for all branches. Per branch: each branch counts on its own and its code is part of the number, so two branches can never produce the same number. `lastNumber` can only move forward (e.g. to continue from old software); going back would reissue numbers.\n\n**Permission:** `settings.numbering.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Saved; the series as it now stands.\n- `400` — The last number would go backwards, or a yearly restart without the year in the number.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"prefix\": \"text\",\n  \"digitPadding\": 1,\n  \"lastNumber\": 1,\n  \"financialYearReset\": false,\n  \"financialYearFormat\": \"YY-YY\",\n  \"branchScope\": \"shared\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "GET master/parties",
           "request": {
             "method": "GET",
@@ -2628,23 +3298,23 @@
                   "key": "search",
                   "value": "text",
                   "disabled": true,
-                  "description": "Matches code, name, phone, gstin."
+                  "description": "Matches name, phone, code."
                 },
                 {
                   "key": "is_customer",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
                 },
                 {
                   "key": "is_supplier",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
                 },
                 {
                   "key": "is_active",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
                 },
@@ -2653,6 +3323,18 @@
                   "value": "text",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "gstin",
+                  "value": "27AABCU9603R1ZM",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -2706,7 +3388,7 @@
             "description": "Create a customer or supplier\n\n**Permission:** `master.customer.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"is_customer\": false,\n  \"is_supplier\": false,\n  \"party_type\": \"individual\",\n  \"phone\": \"9820011223\",\n  \"email\": \"someone@example.com\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\",\n  \"state_code\": \"CODE01\",\n  \"address_line1\": \"text\",\n  \"city\": \"text\"\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"is_customer\": false,\n  \"is_supplier\": false,\n  \"name\": \"Example name\",\n  \"party_type\": \"individual\",\n  \"phone\": \"9820011223\",\n  \"email\": \"someone@example.com\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\",\n  \"state_code\": \"CODE01\",\n  \"address_line1\": \"text\",\n  \"city\": \"text\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2815,7 +3497,513 @@
             "description": "Only the fields you send are changed.\n\n**Permission:** `master.customer.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"is_customer\": false,\n  \"is_supplier\": false,\n  \"phone\": \"9820011223\",\n  \"email\": \"someone@example.com\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\",\n  \"state_code\": \"CODE01\",\n  \"city\": \"text\",\n  \"credit_limit\": \"text\",\n  \"credit_days\": \"text\",\n  \"kyc_status\": \"none\"\n}",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"party_type\": \"text\",\n  \"phone\": \"9820011223\",\n  \"email\": \"someone@example.com\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\",\n  \"state_code\": \"CODE01\",\n  \"address_line1\": \"text\",\n  \"city\": \"text\",\n  \"state\": \"text\",\n  \"pincode\": \"CODE01\",\n  \"credit_limit\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET master/payment-methods",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/payment-methods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "payment-methods"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "Matches code, name."
+                },
+                {
+                  "key": "kind",
+                  "value": "cash",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "is_active",
+                  "value": "true",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Paginated. `total` is the count before paging, for the pager.\n\n**Permission:** `master.payment.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Matching payment methods.\n- `403` — Missing permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST master/payment-methods",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/payment-methods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "payment-methods"
+              ],
+              "query": []
+            },
+            "description": "Create a payment method\n\n**Permission:** `master.payment.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"account_id\": \"{{account_id}}\",\n  \"requires_reference\": false,\n  \"charges_percent\": \"8\",\n  \"max_amount\": \"6500.00\",\n  \"sort_order\": 0,\n  \"is_active\": true,\n  \"code\": \"CODE01\",\n  \"kind\": \"cash\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE master/payment-methods/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/payment-methods/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "payment-methods",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Soft delete — the row stays for the audit trail and disappears from lists.\n\n**Permission:** `master.payment.delete`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Removed.\n- `409` — Referenced elsewhere — deactivate instead."
+          },
+          "response": []
+        },
+        {
+          "name": "GET master/payment-methods/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/payment-methods/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "payment-methods",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Get one payment method\n\n**Permission:** `master.payment.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The payment method.\n- `404` — Not found, or belongs to another tenant."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH master/payment-methods/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/payment-methods/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "payment-methods",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Only the fields you send are changed.\n\n**Permission:** `master.payment.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"account_id\": \"{{account_id}}\",\n  \"requires_reference\": false,\n  \"charges_percent\": \"8\",\n  \"max_amount\": \"6500.00\",\n  \"sort_order\": 1,\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT master/payment-methods/:id/branches",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/payment-methods/{{id}}/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "payment-methods",
+                "{{id}}",
+                "branches"
+              ],
+              "query": []
+            },
+            "description": "Send the full list. An empty list means every branch.\n\n**Permission:** `master.payment.update`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchIds\": [\n    \"{{id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET master/price-rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/price-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "price-rules"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "Matches code, name."
+                },
+                {
+                  "key": "applies_to",
+                  "value": "making",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "is_active",
+                  "value": "true",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "metal_id",
+                  "value": "{{metal_id}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "item_category_id",
+                  "value": "{{item_category_id}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "branch_id",
+                  "value": "{{branch_id}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Paginated. `total` is the count before paging, for the pager.\n\n**Permission:** `master.pricing.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Matching price rules.\n- `403` — Missing permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST master/price-rules",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/price-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "price-rules"
+              ],
+              "query": []
+            },
+            "description": "Create a price rule\n\n**Permission:** `master.pricing.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"applies_to\": \"making\",\n  \"basis\": \"per_gram\",\n  \"rate\": \"6500.00\",\n  \"flat_amount\": \"6500.00\",\n  \"slabs\": [],\n  \"slab_mode\": \"whole\",\n  \"minimum_amount\": \"6500.00\",\n  \"metal_id\": \"{{metal_id}}\",\n  \"purity_id\": \"{{purity_id}}\",\n  \"item_category_id\": \"{{item_category_id}}\",\n  \"priority\": 0,\n  \"is_active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE master/price-rules/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/price-rules/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "price-rules",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Soft delete — the row stays for the audit trail and disappears from lists.\n\n**Permission:** `master.pricing.delete`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Removed.\n- `409` — Referenced elsewhere — deactivate instead."
+          },
+          "response": []
+        },
+        {
+          "name": "GET master/price-rules/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/price-rules/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "price-rules",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Get one price rule\n\n**Permission:** `master.pricing.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The price rule.\n- `404` — Not found, or belongs to another tenant."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH master/price-rules/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/master/price-rules/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "master",
+                "price-rules",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Only the fields you send are changed.\n\n**Permission:** `master.pricing.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"applies_to\": \"making\",\n  \"basis\": \"per_gram\",\n  \"rate\": \"6500.00\",\n  \"flat_amount\": \"6500.00\",\n  \"slabs\": [\n    {\n      \"fromG\": \"text\",\n      \"toG\": \"text\",\n      \"rate\": \"6500.00\"\n    }\n  ],\n  \"slab_mode\": \"whole\",\n  \"minimum_amount\": \"6500.00\",\n  \"metal_id\": \"{{metal_id}}\",\n  \"purity_id\": \"{{purity_id}}\",\n  \"item_category_id\": \"{{item_category_id}}\",\n  \"item_id\": \"{{item_id}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2865,9 +4053,15 @@
                 },
                 {
                   "key": "is_active",
-                  "value": "false",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -2921,7 +4115,7 @@
             "description": "Create a purity\n\n**Permission:** `master.purity.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"metal_id\": \"{{metal_id}}\",\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"fineness_percent\": \"8\",\n  \"karat\": \"text\",\n  \"is_hallmarkable\": true,\n  \"sort_order\": 0\n}",
+              "raw": "{\n  \"metal_id\": \"{{metal_id}}\",\n  \"name\": \"Example name\",\n  \"code\": \"CODE01\",\n  \"fineness_percent\": \"8\",\n  \"is_hallmarkable\": true,\n  \"sort_order\": 1,\n  \"notation\": \"karat\",\n  \"default_unit\": \"g\",\n  \"is_default\": false,\n  \"description\": \"text\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3030,7 +4224,7 @@
             "description": "Only the fields you send are changed.\n\n**Permission:** `master.purity.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"fineness_percent\": \"8\",\n  \"is_hallmarkable\": false,\n  \"is_active\": false,\n  \"sort_order\": 1\n}",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"fineness_percent\": \"8\",\n  \"is_hallmarkable\": false,\n  \"is_active\": false,\n  \"sort_order\": 1,\n  \"notation\": \"karat\",\n  \"default_unit\": \"g\",\n  \"is_default\": false,\n  \"description\": \"text\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3071,7 +4265,7 @@
               ],
               "query": []
             },
-            "description": "A new rate is a new row — rates are never edited. Yesterday’s invoices keep pointing at yesterday’s rate, so an old bill can always be explained.\n\n**Permission:** `master.rates.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Rate broadcast.\n- `422` — Rate must be greater than zero.",
+            "description": "A new rate is a new row — rates are never edited. Yesterday’s invoices keep pointing at yesterday’s rate, so an old bill can always be explained.\n\n**Permission:** `master.rates.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Rate broadcast.\n- `400` — Buying rate above selling rate, or the purity belongs to another metal.\n- `422` — Rate must be greater than zero.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"metal_id\": \"{{metal_id}}\",\n  \"purity_id\": \"{{purity_id}}\",\n  \"rate_per_gram\": \"6500.00\",\n  \"buying_rate_per_gram\": \"6500.00\",\n  \"branch_id\": \"{{branch_id}}\",\n  \"effective_from\": \"{{nowIso}}\"\n}",
@@ -3119,7 +4313,7 @@
                 }
               ]
             },
-            "description": "The latest rate per metal and purity, honouring a branch-specific rate over the shared one. This is what POS prices from — a sale is refused with `rate_missing` when no rate exists.\n\n**Permission:** `master.rates.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Current rates."
+            "description": "One row per active purity, with its latest rate (a branch rate beats the shared one) and the last rate before today, for the day’s change. A purity with no rate yet has null rate fields — POS refuses to bill it with `rate_missing`.\n\n**Permission:** `master.rates.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Current rates."
           },
           "response": []
         },
@@ -3957,6 +5151,50 @@
             "description": "Post a purchase — stock in, supplier credited\n\n**Permission:** `pos.purchase.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Posted.\n- `422` — Already posted or empty."
           },
           "response": []
+        },
+        {
+          "name": "POST pricing/preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pricing/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "preview"
+              ],
+              "query": []
+            },
+            "description": "For live totals while a bill or order is being built. Posting a document always re-prices on the server; the client's numbers are never trusted.\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Priced.\n- `400` — Something the user must fix — missing rate, missing GST, bad slab, too much discount.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerStateCode\": \"CODE01\",\n  \"lines\": [\n    {\n      \"metalId\": \"{{metalId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"itemId\": \"{{itemId}}\",\n      \"categoryId\": \"{{categoryId}}\",\n      \"hsnCode\": \"CODE01\",\n      \"quantity\": 1,\n      \"grossWeightG\": \"10.000\",\n      \"stoneWeightG\": \"10.000\",\n      \"otherWeightG\": \"10.000\",\n      \"stoneAmount\": \"6500.00\",\n      \"hallmarkAmount\": \"6500.00\",\n      \"discount\": \"text\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -3964,6 +5202,100 @@
       "name": "High-Value Stock & HUID",
       "description": "Vault, counter & window inventory with piece-level weights & BIS tracking.",
       "item": [
+        {
+          "name": "GET stock/adjustments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/adjustments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "adjustments"
+              ],
+              "query": [
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page’s nextCursor."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Adjustments\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/adjustments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/adjustments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "adjustments"
+              ],
+              "query": []
+            },
+            "description": "shortage, damage, loss and write_off take pieces (written off) and lot weight out; found adds lot weight. One branch per adjustment, a note is required, and it cannot be edited. Owner and branch admin only.\n\n**Permission:** `stock.adjustment.post`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Posted.\n- `422` — Piece not in stock, not enough of a lot, or two branches.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"shortage\",\n  \"note\": \"text\",\n  \"pieceIds\": [\n    \"{{id}}\"\n  ],\n  \"lots\": [\n    {\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"netWeight\": \"10.000\",\n      \"grossWeight\": \"10.000\",\n      \"locationId\": \"{{locationId}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
         {
           "name": "GET stock/balances",
           "request": {
@@ -4009,14 +5341,20 @@
                   "description": ""
                 },
                 {
-                  "key": "nonZeroOnly",
-                  "value": "true",
+                  "key": "tracking",
+                  "value": "lot",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "text",
                   "disabled": true,
                   "description": ""
                 }
               ]
             },
-            "description": "Lot-tracked items carry weight only; piece-tracked items carry a count as well.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Balances."
+            "description": "`tracking=lot` is the Lots view: bulk metal and findings by weight, valued at average cost.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Balances that are not zero."
           },
           "response": []
         },
@@ -4048,7 +5386,389 @@
               ],
               "query": []
             },
-            "description": "Recomputes every balance from stock_movement. Nothing should need this, which is why it exists.\n\n**Permission:** `stock.verification.approve`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Rebuilt."
+            "description": "Recomputes every balance from stock_movement. Nothing should need this, which is why it exists.\n\n**Permission:** `stock.adjustment.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Rebuilt."
+          },
+          "response": []
+        },
+        {
+          "name": "GET stock/counts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts"
+              ],
+              "query": [
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "status",
+                  "value": "open",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page’s nextCursor."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Stock counts\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/counts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts"
+              ],
+              "query": []
+            },
+            "description": "Start counting a location\n\n**Permission:** `stock.count.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The count.\n- `422` — Already being counted.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"locationId\": \"{{locationId}}\",\n  \"note\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET stock/counts/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Every piece as found, missing, elsewhere or unknown; every lot with book and counted weight.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The count."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/counts/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts/{{id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts",
+                "{{id}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "Nothing changes in stock.\n\n**Permission:** `stock.count.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE stock/counts/:id/lines/:lineId",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts/{{id}}/lines/{{lineId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts",
+                "{{id}}",
+                "lines",
+                "{{lineId}}"
+              ],
+              "query": []
+            },
+            "description": "Remove a scanned tag or weighed lot\n\n**Permission:** `stock.count.create`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Removed."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/counts/:id/lots",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts/{{id}}/lots",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts",
+                "{{id}}",
+                "lots"
+              ],
+              "query": []
+            },
+            "description": "Record a lot’s weight on the scale\n\n**Permission:** `stock.count.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The line.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemId\": \"{{itemId}}\",\n  \"purityId\": \"{{purityId}}\",\n  \"netWeight\": \"10.000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/counts/:id/post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts/{{id}}/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts",
+                "{{id}}",
+                "post"
+              ],
+              "query": []
+            },
+            "description": "Moves pieces found here from other locations of the branch, sets weighed lots to the scale weight, and writes off missing pieces only if `writeOffMissing`. One stock-count adjustment. Owner and branch admin only.\n\n**Permission:** `stock.count.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Posted.\n- `422` — Not open.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"writeOffMissing\": false,\n  \"note\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/counts/:id/scan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/counts/{{id}}/scan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "counts",
+                "{{id}}",
+                "scan"
+              ],
+              "query": []
+            },
+            "description": "Send one tag per scan, or many pasted at once. A tag already scanned is ignored.\n\n**Permission:** `stock.count.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — What each tag turned out to be.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tags\": [\n    \"text\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/import/:kind",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/import/{{kind}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "import",
+                "{{kind}}"
+              ],
+              "query": []
+            },
+            "description": "kind: pieces (one row per tagged piece; blank tag_number takes the next tag) or lots (one row per item + purity, by weight). Every row goes into `locationId`. Up to 1,000 rows a call; good rows are saved, bad ones come back with their spreadsheet row. Items and purities are named by code.\n\n**Permission:** `stock.opening.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — What happened to each row.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"locationId\": \"{{locationId}}\",\n  \"rows\": [\n    {}\n  ],\n  \"firstRow\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         },
@@ -4109,26 +5829,20 @@
                   "description": ""
                 },
                 {
-                  "key": "from",
+                  "key": "cursor",
                   "value": "text",
                   "disabled": true,
-                  "description": ""
-                },
-                {
-                  "key": "to",
-                  "value": "text",
-                  "disabled": true,
-                  "description": ""
+                  "description": "From the previous page’s nextCursor."
                 },
                 {
                   "key": "limit",
-                  "value": "100",
+                  "value": "50",
                   "disabled": true,
                   "description": ""
                 }
               ]
             },
-            "description": "Append-only. This is how you answer “where did those 4 grams go”.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Movements, newest first."
+            "description": "Append-only, newest first. This is how you answer “where did those 4 grams go”.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Movements."
           },
           "response": []
         },
@@ -4162,17 +5876,11 @@
                   "key": "search",
                   "value": "text",
                   "disabled": true,
-                  "description": "Matches tag number or HUID."
+                  "description": ""
                 },
                 {
                   "key": "status",
                   "value": "in_stock",
-                  "disabled": true,
-                  "description": ""
-                },
-                {
-                  "key": "locationId",
-                  "value": "{{locationId}}",
                   "disabled": true,
                   "description": ""
                 },
@@ -4183,26 +5891,364 @@
                   "description": ""
                 },
                 {
+                  "key": "locationId",
+                  "value": "{{locationId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
                   "key": "itemId",
                   "value": "{{itemId}}",
                   "disabled": true,
                   "description": ""
                 },
                 {
-                  "key": "limit",
-                  "value": "50",
+                  "key": "purityId",
+                  "value": "{{purityId}}",
                   "disabled": true,
                   "description": ""
                 },
                 {
-                  "key": "offset",
-                  "value": "0",
+                  "key": "unprinted",
+                  "value": "true",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "mine",
+                  "value": "true",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page’s nextCursor."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
                   "disabled": true,
                   "description": ""
                 }
               ]
             },
-            "description": "Search by tag number or HUID — this is what the command palette queries.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Pieces."
+            "description": "Newest first, a page at a time. `search` matches tag number, HUID or item name. `unprinted=true` is the tag print queue; `mine=true` keeps pieces you tagged.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Pieces."
+          },
+          "response": []
+        },
+        {
+          "name": "GET stock/pieces/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/pieces/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "pieces",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "The piece, every stock movement it made, and its HUID history.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The piece.\n- `404` — Not found."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/pieces/:id/weights",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/pieces/{{id}}/weights",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "pieces",
+                "{{id}}",
+                "weights"
+              ],
+              "query": []
+            },
+            "description": "For a weighing mistake. Posts a weighing-correction adjustment so stock follows. Owner and branch admin only.\n\n**Permission:** `stock.adjustment.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated piece.\n- `422` — Not in stock or weights do not add up.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grossWeight\": \"10.000\",\n  \"stoneWeight\": \"10.000\",\n  \"otherWeight\": \"10.000\",\n  \"note\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET stock/summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Per metal: pieces, gross, net and fine weight and cost value on hand (goods in transit excluded), plus the tag print queue (whole branch, and tagged by you), hallmarkable pieces without a HUID, transfers on the road to this branch and open counts.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Totals."
+          },
+          "response": []
+        },
+        {
+          "name": "GET stock/transfers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "transfers"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "in_transit",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page’s nextCursor."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "`branchId` matches either end.\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/transfers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "transfers"
+              ],
+              "query": []
+            },
+            "description": "Inside a branch it completes at once. To another branch it stays in transit until that branch receives it.\n\n**Permission:** `stock.transfer.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The transfer.\n- `422` — Piece not at that location, or not enough of a lot.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromLocationId\": \"{{fromLocationId}}\",\n  \"toLocationId\": \"{{toLocationId}}\",\n  \"pieceIds\": [\n    \"{{id}}\"\n  ],\n  \"lots\": [\n    {\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"netWeight\": \"10.000\",\n      \"grossWeight\": \"10.000\"\n    }\n  ],\n  \"note\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET stock/transfers/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/transfers/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "transfers",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "One transfer with its lines\n\n**Permission:** `stock.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The transfer."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/transfers/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/transfers/{{id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "transfers",
+                "{{id}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "The goods go back to where they were sent from.\n\n**Permission:** `stock.transfer.cancel`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled.\n- `422` — Not in transit."
+          },
+          "response": []
+        },
+        {
+          "name": "POST stock/transfers/:id/receive",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/transfers/{{id}}/receive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "transfers",
+                "{{id}}",
+                "receive"
+              ],
+              "query": []
+            },
+            "description": "The receiving branch confirms the goods arrived.\n\n**Permission:** `stock.transfer.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Received.\n- `422` — Not in transit."
           },
           "response": []
         }
@@ -4212,6 +6258,52 @@
       "name": "Tagging & Barcoding",
       "description": "Dual-wing jewellery string tags, QR labels, thermal printer queues & BIS mapping.",
       "item": [
+        {
+          "name": "POST stock/pieces/:id/huid",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/pieces/{{id}}/huid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "pieces",
+                "{{id}}",
+                "huid"
+              ],
+              "query": []
+            },
+            "description": "The old HUID is kept in the history as superseded.\n\n**Permission:** `tagging.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated piece.\n- `422` — Bad format, taken, or not in stock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"huid\": \"{{huid}}\",\n  \"hallmarkCentre\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
         {
           "name": "POST tagging/pieces",
           "request": {
@@ -4243,10 +6335,10 @@
               ],
               "query": []
             },
-            "description": "Creates the physical piece record, allocates a tag number from the tag series, and records the BIS HUID. Net metal weight is gross minus stones.\n\n**Permission:** `tagging.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Piece tagged.\n- `422` — HUID format invalid, or net weight would be negative.",
+            "description": "Creates the pieces, their HUID records and their opening stock, all or nothing. The pieces join the tag print queue.\n\n**Permission:** `tagging.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Tagged pieces, in the order sent.\n- `422` — A piece is invalid; `details.errors` lists each by index.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"itemId\": \"{{itemId}}\",\n  \"purityId\": \"{{purityId}}\",\n  \"locationId\": \"{{locationId}}\",\n  \"grossWeight\": \"10.000\",\n  \"stoneWeight\": \"10.000\",\n  \"otherWeight\": \"10.000\",\n  \"stoneCount\": 1,\n  \"stoneValue\": \"text\",\n  \"huid\": \"{{huid}}\",\n  \"hallmarkCentre\": \"text\",\n  \"costValue\": \"text\",\n  \"makingCost\": \"text\",\n  \"origin\": \"opening\"\n}",
+              "raw": "{\n  \"pieces\": [\n    {\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"locationId\": \"{{locationId}}\",\n      \"grossWeight\": \"10.000\",\n      \"stoneWeight\": \"10.000\",\n      \"otherWeight\": \"10.000\",\n      \"stoneCount\": 1,\n      \"stoneValue\": \"text\",\n      \"huid\": \"{{huid}}\",\n      \"hallmarkCentre\": \"text\",\n      \"costValue\": \"text\",\n      \"makingCost\": \"text\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4257,51 +6349,7 @@
           "response": []
         },
         {
-          "name": "GET tagging/queue",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/tagging/queue",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "tagging",
-                "queue"
-              ],
-              "query": [
-                {
-                  "key": "status",
-                  "value": "queued",
-                  "disabled": true,
-                  "description": ""
-                },
-                {
-                  "key": "branchId",
-                  "value": "{{branchId}}",
-                  "disabled": true,
-                  "description": ""
-                }
-              ]
-            },
-            "description": "The thermal printer queue\n\n**Permission:** `tagging.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Print jobs with their item counts."
-          },
-          "response": []
-        },
-        {
-          "name": "POST tagging/queue",
+          "name": "POST tagging/print",
           "request": {
             "method": "POST",
             "header": [
@@ -4320,21 +6368,230 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/tagging/queue",
+              "raw": "{{baseUrl}}/api/tagging/print",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "tagging",
-                "queue"
+                "print"
               ],
               "query": []
             },
-            "description": "Queue pieces for printing\n\n**Permission:** `tagging.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Queued.",
+            "description": "Logs the print against the design used, takes the pieces out of the print queue, and returns the values for each label. The browser draws and prints them. A queue print refuses pieces already printed (someone else printed them a moment ago) and names who and when; `reprint: true` prints a tag again on purpose.\n\n**Permission:** `tagging.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Label values keyed like the designer’s fields.\n- `422` — `tag_already_printed`: `details.tags` lists them. Nothing is printed.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"templateId\": \"{{templateId}}\",\n  \"branchId\": \"{{branchId}}\",\n  \"pieceIds\": [\n    \"{{id}}\"\n  ],\n  \"copies\": 1\n}",
+              "raw": "{\n  \"templateId\": \"{{templateId}}\",\n  \"pieceIds\": [\n    \"{{id}}\"\n  ],\n  \"reprint\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET tagging/templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tagging/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tagging",
+                "templates"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "Matches nothing."
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Paginated. `total` is the count before paging, for the pager.\n\n**Permission:** `tagging.template.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Matching tag designs.\n- `403` — Missing permission."
+          },
+          "response": []
+        },
+        {
+          "name": "POST tagging/templates",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tagging/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tagging",
+                "templates"
+              ],
+              "query": []
+            },
+            "description": "Create a tag design\n\n**Permission:** `tagging.template.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"page\": {},\n  \"canvas_json\": \"text\",\n  \"bindings\": [\n    {}\n  ],\n  \"is_default\": false,\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE tagging/templates/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tagging/templates/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tagging",
+                "templates",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Soft delete — the row stays for the audit trail and disappears from lists.\n\n**Permission:** `tagging.template.delete`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Removed.\n- `409` — Referenced elsewhere — deactivate instead."
+          },
+          "response": []
+        },
+        {
+          "name": "GET tagging/templates/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tagging/templates/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tagging",
+                "templates",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Get one tag design\n\n**Permission:** `tagging.template.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The tag design.\n- `404` — Not found, or belongs to another tenant."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH tagging/templates/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tagging/templates/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tagging",
+                "templates",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Only the fields you send are changed.\n\n**Permission:** `tagging.template.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"page\": {},\n  \"canvas_json\": \"text\",\n  \"bindings\": [\n    {}\n  ],\n  \"is_default\": false,\n  \"is_active\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4557,6 +6814,12 @@
                   "value": "open",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -4980,6 +7243,12 @@
                   "value": "false",
                   "disabled": true,
                   "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "From the previous page's nextCursor (large lists only)."
                 },
                 {
                   "key": "limit",
@@ -5499,6 +7768,183 @@
               ]
             },
             "description": "Debits and credits per account. If these do not match, something is badly wrong — they always should.\n\n**Permission:** `accounts.cash.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Per-account totals plus the grand totals."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "identity",
+      "description": "",
+      "item": [
+        {
+          "name": "POST auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ],
+              "query": []
+            },
+            "description": "Returns an access token and the whole session, so the app can render straight away. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: \"include\"`. After 20 failed attempts in a minute from one network for one shop, further attempts are refused for the rest of that minute.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — Signed in.\n- `401` — See `error.code`: invalid_credentials, account_locked, account_inactive, tenant_inactive, no_branch.\n- `429` — rate_limited.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantCode\": \"CODE01\",\n  \"identifier\": \"text\",\n  \"password\": \"changeme123\",\n  \"remember\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body && body.accessToken) {",
+                  "  pm.collectionVariables.set(\"token\", body.accessToken);",
+                  "  if (body.refreshToken) pm.collectionVariables.set(\"refreshToken\", body.refreshToken);",
+                  "  console.log(\"Saved token\");",
+                  "}",
+                  "if (body && body.user && body.user.branchId) {",
+                  "  pm.collectionVariables.set(\"branchId\", body.user.branchId);",
+                  "}",
+                  "if (body && body.tenantId) pm.collectionVariables.set(\"tenantId\", body.tenantId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ],
+              "query": []
+            },
+            "description": "Ends this sign-in on every tab and clears the cookie. Safe to call when already signed out.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `204` — Signed out."
+          },
+          "response": []
+        },
+        {
+          "name": "POST auth/refresh",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ],
+              "query": []
+            },
+            "description": "Uses the `ks_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — A fresh access token; the cookie is rotated.\n- `401` — session_expired, account_inactive or tenant_inactive — go to sign in and show the message."
+          },
+          "response": []
+        },
+        {
+          "name": "GET me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me"
+              ],
+              "query": []
+            },
+            "description": "The same `session` sign-in returns. Call it when the app opens, and with `X-Branch-Id` after switching branch.\n\n**Permission:** none\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The session at the active branch.\n- `403` — branch_forbidden — that branch is not assigned to this user; call again without `X-Branch-Id`."
+          },
+          "response": []
+        },
+        {
+          "name": "POST me/password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "password"
+              ],
+              "query": []
+            },
+            "description": "Signs out every other device and returns a new access token for this one. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: \"include\"`.\n\n**Permission:** none\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Changed.\n- `400` — Current password is wrong, or the new one is the same.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"changeme123\",\n  \"newPassword\": \"changeme123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }

@@ -22,7 +22,7 @@ Then:
 ```bash
 curl -s localhost:4000/api/auth/login \
   -H 'content-type: application/json' \
-  -d '{"tenantCode":"demo","email":"owner@demo.test","password":"demo12345"}'
+  -d '{"tenantCode":"aarohi","identifier":"owner@aarohi.test","password":"demo12345"}'
 ```
 
 ### One database requirement

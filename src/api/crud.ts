@@ -6,7 +6,9 @@
  */
 import { z, type ZodType } from 'zod';
 import { defineRoute, type RouteChange } from '../core/http/route-registry.js';
-import { transaction } from '../core/db/client.js';
+import { transaction, type Tx } from '../core/db/client.js';
+import { recordAudit } from '../core/audit.js';
+import { ValidationError } from '../core/errors/app-error.js';
 import { repo } from '../core/db/repository.js';
 import { getTable } from '../core/db/schema/registry.js';
 import { quoteIdent } from '../core/db/schema/sql.js';
@@ -30,16 +32,50 @@ export interface CrudOptions {
   changelog?: RouteChange[];
   /** Extra columns to select on list, e.g. joined names. */
   listSelect?: string;
+  /**
+   * Large tables: cursor pagination instead of offset + count. Ordered by
+   * `column` (then id) ascending, or newest-first by id if no column is given.
+   * The response is { rows, nextCursor } — no total.
+   */
+  keyset?: { column?: string };
+  hooks?: CrudHooks;
+}
+
+type Row = Record<string, unknown>;
+
+export interface CrudHooks {
+  /** Validate / normalise before insert. Return what to insert. */
+  beforeCreate?: (tx: Tx, values: Row) => Promise<Row> | Row;
+  /** Validate / normalise before update. `current` is the row as it is now. */
+  beforeUpdate?: (tx: Tx, values: Row, current: Row) => Promise<Row> | Row;
+  /** Throw to refuse the delete, or tidy related rows first. */
+  beforeDelete?: (tx: Tx, current: Row) => Promise<void> | void;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const encodeCursor = (value: unknown, id: string) =>
+  Buffer.from(JSON.stringify([value ?? null, id])).toString('base64url');
+
+export function decodeCursor(raw: string): { value: unknown; id: string } {
+  try {
+    const [value, id] = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as [unknown, unknown];
+    if (typeof id === 'string' && UUID.test(id)) return { value, id };
+  } catch { /* fall through */ }
+  throw new ValidationError('That page link is no longer valid — reload the list.');
 }
 
 export function defineCrud(o: CrudOptions): void {
   const path = `${o.basePath}/${o.resource}`;
-  const soft = getTable(o.table)?.softDelete ?? false;
+  const def = getTable(o.table);
+  const soft = def?.softDelete ?? false;
+  // Casting a text column to ::text can stop Postgres using its trigram index.
+  const searchExpr = (c: string) => (def?.columns[c]?.type === 'text' ? quoteIdent(c) : `${quoteIdent(c)}::text`);
   const changelog = o.changelog;
 
   const filterSchema = z.object({
     search: z.string().optional().describe(`Matches ${(o.searchColumns ?? []).join(', ') || 'nothing'}.`),
     ...(o.filters ?? {}),
+    cursor: z.string().optional().describe('From the previous page\'s nextCursor (large lists only).'),
   }).merge(pagination);
 
   defineRoute({
@@ -61,7 +97,7 @@ export function defineCrud(o: CrudOptions): void {
       if (q.search && o.searchColumns?.length) {
         params.push(`%${q.search}%`);
         const p = `$${params.length}`;
-        clauses.push(`(${o.searchColumns.map((c) => `${quoteIdent(c)}::text ilike ${p}`).join(' or ')})`);
+        clauses.push(`(${o.searchColumns.map((c) => `${searchExpr(c)} ilike ${p}`).join(' or ')})`);
       }
       for (const key of Object.keys(o.filters ?? {})) {
         if (q[key] === undefined) continue;
@@ -69,16 +105,41 @@ export function defineCrud(o: CrudOptions): void {
         clauses.push(`${quoteIdent(key)} = $${params.length}`);
       }
 
-      const where = clauses.length ? `where ${clauses.join(' and ')}` : '';
-      const limit = Number(q.limit ?? 50);
-      const offset = Number(q.offset ?? 0);
+      if (o.keyset) {
+        const col = o.keyset.column;
+        const limit = Math.min(Math.max(Number(q.limit ?? 50), 1), 200);
+        if (q.cursor) {
+          const cursor = decodeCursor(String(q.cursor));
+          if (col) {
+            params.push(cursor.value, cursor.id);
+            clauses.push(`(${quoteIdent(col)}, id) > ($${params.length - 1}, $${params.length}::uuid)`);
+          } else {
+            params.push(cursor.id);
+            clauses.push(`id < $${params.length}::uuid`);
+          }
+        }
+        params.push(limit + 1);
+        const where = clauses.length ? `where ${clauses.join(' and ')}` : '';
+        const rows = await tx.query<Row>(
+          `select ${o.listSelect ?? '*'} from ${quoteIdent(o.table)} ${where}
+            order by ${col ? `${quoteIdent(col)} asc, id asc` : 'id desc'}
+            limit $${params.length}`,
+          params,
+        );
+        const hasMore = rows.length > limit;
+        if (hasMore) rows.pop();
+        const last = rows[rows.length - 1];
+        return { rows, nextCursor: hasMore && last ? encodeCursor(col ? last[col] : null, String(last.id)) : null };
+      }
 
+      const where = clauses.length ? `where ${clauses.join(' and ')}` : '';
+      const limit = Math.min(Math.max(Number(q.limit ?? 50), 1), 200);
+      const offset = Math.max(Number(q.offset ?? 0), 0);
       const rows = await tx.query(
         `select ${o.listSelect ?? '*'} from ${quoteIdent(o.table)} ${where}
           order by ${o.defaultOrder ?? 'created_at desc'} limit ${limit} offset ${offset}`, params);
       const counted = await tx.one<{ count: string }>(
         `select count(*)::text count from ${quoteIdent(o.table)} ${where}`, params);
-
       return { rows, total: Number(counted.count), limit, offset };
     }),
   });
@@ -108,7 +169,12 @@ export function defineCrud(o: CrudOptions): void {
     ],
     changelog,
     handler: async (req, res) => {
-      const row = await transaction((tx) => repo(tx, o.table).insert(req.body));
+      const row = await transaction(async (tx) => {
+        const values = o.hooks?.beforeCreate ? await o.hooks.beforeCreate(tx, req.body as Row) : (req.body as Row);
+        const created = await repo<Row>(tx, o.table).insert(values);
+        await recordAudit(tx, `${o.table}.create`, o.table, String(created.id), values);
+        return created;
+      });
       res.status(201).json(row);
     },
   });
@@ -124,7 +190,18 @@ export function defineCrud(o: CrudOptions): void {
       { status: 404, description: 'Not found.', schema: errorEnvelope },
     ],
     changelog,
-    handler: async (req) => transaction((tx) => repo(tx, o.table).update(param(req, 'id'), req.body)),
+    handler: async (req) => transaction(async (tx) => {
+      const id = param(req, 'id');
+      const r = repo<Row>(tx, o.table);
+      const current = await r.getById(id);
+      const values = o.hooks?.beforeUpdate
+        ? await o.hooks.beforeUpdate(tx, req.body as Row, current)
+        : (req.body as Row);
+      const updated = await r.update(id, values);
+      const before = Object.fromEntries(Object.keys(values).map((k) => [k, current[k]]));
+      await recordAudit(tx, `${o.table}.update`, o.table, id, { before, after: values });
+      return updated;
+    }),
   });
 
   defineRoute({
@@ -141,7 +218,14 @@ export function defineCrud(o: CrudOptions): void {
     ],
     changelog,
     handler: async (req, res) => {
-      await transaction((tx) => repo(tx, o.table).remove(param(req, 'id')));
+      await transaction(async (tx) => {
+        const id = param(req, 'id');
+        const r = repo<Row>(tx, o.table);
+        const current = await r.getById(id); // 404 instead of a silent no-op
+        if (o.hooks?.beforeDelete) await o.hooks.beforeDelete(tx, current);
+        await r.remove(id);
+        await recordAudit(tx, `${o.table}.delete`, o.table, id);
+      });
       res.status(204).end();
     },
   });

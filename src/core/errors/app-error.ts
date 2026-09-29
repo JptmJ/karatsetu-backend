@@ -19,14 +19,14 @@ export class ValidationError extends AppError {
 }
 
 export class UnauthorizedError extends AppError {
-  constructor(message = 'Sign-in required') {
-    super(message, 401, 'unauthorized');
+  constructor(message = 'Sign-in required', code = 'unauthorized') {
+    super(message, 401, code);
   }
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message = 'You do not have permission to do this') {
-    super(message, 403, 'forbidden');
+  constructor(message = 'You do not have permission to do this', code = 'forbidden') {
+    super(message, 403, code);
   }
 }
 

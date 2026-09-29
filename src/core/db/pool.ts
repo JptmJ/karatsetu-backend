@@ -1,3 +1,6 @@
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
+
 import pg from 'pg';
 import { env } from '../config/env.js';
 import { logger } from '../util/logger.js';
@@ -28,21 +31,17 @@ export const pool = new Pool({
   ssl: sslOption(),
   application_name: 'karat-setu',
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
+  connectionTimeoutMillis: 30_000,
 });
 
 pool.on('error', (error) => {
   logger.error({ err: error }, 'Idle database connection errored');
 });
 
-// Pin the schema on every new connection rather than trusting a role-level
-// default. On a managed provider the role setting can be reset out from under
-// you, and an unqualified CREATE TABLE landing in `public` would be a mess to
-// unpick later.
+// A connection dropped mid-request (the database restarted, the network blinked)
+// fails that request only. Unheard, the error would stop the whole server.
 pool.on('connect', (client) => {
-  client.query(`set search_path to ${env.DATABASE_SCHEMA}, public`).catch((error) => {
-    logger.error({ err: error }, 'Could not set search_path on a new connection');
-  });
+  client.on('error', (error) => logger.error({ err: error }, 'Database connection dropped'));
 });
 
 export async function checkConnection(): Promise<void> {

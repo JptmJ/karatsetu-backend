@@ -93,10 +93,11 @@ export const TENANT_ROLES = [
   {
     code: 'storekeeper',
     name: 'Store Keeper',
-    description: 'Receives goods, tags pieces and moves stock between counters and the vault.',
+    description: 'Receives goods, tags pieces, moves stock and counts it. Cannot adjust stock or post a count.',
     isBranchAdmin: false,
     permissions: [
-      'stock.*', 'tagging.*',
+      'stock.view', 'stock.opening.create', 'stock.transfer.create', 'stock.transfer.post', 'stock.transfer.cancel',
+      'stock.count.create', 'tagging.*',
       'pos.purchase.view', 'pos.purchase.create',
       'master.item.view', 'master.purity.view', 'master.branch.view', 'master.rates.view',
     ],

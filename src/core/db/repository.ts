@@ -136,6 +136,40 @@ export function repo<T extends QueryResultRow = QueryResultRow>(tx: Tx, table: s
       return tx.query<T>(parts.join(' '), params);
     },
 
+    /**
+     * Keyset pagination — as fast on page 5,000 as on page 1. Newest first
+     * (UUIDv7 ids are time-ordered). Pass back `nextCursor` for the next page.
+     * Big tables should declare an index on ['id'] (becomes tenant_id, id).
+     */
+    async page(
+      where: Row = {},
+      options: { limit?: number; cursor?: string | null } = {},
+    ): Promise<{ rows: T[]; nextCursor: string | null }> {
+      const limit = Math.min(Math.max(Number(options.limit) || 50, 1), 200);
+      const params: unknown[] = [];
+      const clauses = Object.entries(where).map(([column, value]) => {
+        if (value === null) return `${quoteIdent(column)} is null`;
+        params.push(value);
+        return `${quoteIdent(column)} = $${params.length}`;
+      });
+      if (def.softDelete) clauses.push('deleted_at is null');
+      if (options.cursor) {
+        params.push(options.cursor);
+        clauses.push(`id < $${params.length}`);
+      }
+      params.push(limit + 1);
+
+      const rows = await tx.query<T>(
+        `select * from ${t}${clauses.length ? ` where ${clauses.join(' and ')}` : ''}
+          order by id desc
+          limit $${params.length}`,
+        params,
+      );
+      const hasMore = rows.length > limit;
+      if (hasMore) rows.pop();
+      return { rows, nextCursor: hasMore ? String(rows[rows.length - 1]!.id) : null };
+    },
+
     async findOneWhere(where: Row): Promise<T | null> {
       const rows = await this.findWhere(where, { limit: 2 });
       if (rows.length > 1) throw new Error(`Expected at most 1 row in ${table}, got ${rows.length}`);

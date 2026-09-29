@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { defineRoute } from '../core/http/route-registry.js';
 import { transaction } from '../core/db/client.js';
-import { record, uuid } from './schemas.js';
+import { boolParam, record, uuid } from './schemas.js';
 import { permissionCatalog } from '../modules/identity/permission-catalog.js';
 import * as staff from '../modules/identity/staff.service.js';
 
@@ -14,8 +14,6 @@ const TODAY = '2026-09-26';
 const idParams = z.object({ id: uuid });
 const assignment = z.object({ roleId: uuid, branchId: uuid.nullable().describe('Null = every branch.') });
 const permissionList = z.array(z.string().min(1)).max(500);
-// z.coerce.boolean() turns the string "false" into true — parse it explicitly.
-const boolParam = z.enum(['true', 'false']).transform((v) => v === 'true');
 const changed = (note: string) => [{ date: TODAY, kind: 'added' as const, note }];
 
 defineRoute({

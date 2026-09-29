@@ -65,6 +65,7 @@ export const refreshTokenTable = defineTable({
     token_hash: col.text({ notNull: true, comment: 'sha256 of the token — the token itself is never stored.' }),
     expires_at: col.timestamptz({ notNull: true }),
     revoked_at: col.timestamptz(),
+    persistent: col.bool({ notNull: true, default: 'true', comment: 'Remember me: 30-day cookie. False: browser-session cookie, 12 hours server-side.' }),
     user_agent: col.text(),
     ip_address: col.text(),
   },
