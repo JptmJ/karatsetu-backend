@@ -3,7 +3,7 @@ import { pinoHttp } from 'pino-http';
 import { logger } from './core/util/logger.js';
 import { authenticate, authenticatePlatform, errorHandler, requestId } from './core/http/middleware.js';
 import { pool } from './core/db/pool.js';
-import { env } from './core/config/env.js';
+import { isProduction } from './core/config/env.js';
 import { buildRouter } from './api/index.js';
 import { routeScope } from './core/http/route-registry.js';
 import { renderDevDocs } from './core/docs/dev-docs.js';
@@ -15,26 +15,12 @@ export function createApp() {
   const app = express();
 
   app.disable('x-powered-by');
+  // The app reaches this API through its own origin (Vite proxy, or the
+  // frontend host's rewrite), so no CORS is needed and the client IP arrives
+  // in X-Forwarded-For.
+  app.set('trust proxy', isProduction);
   app.use(express.json({ limit: '4mb' }));
   app.use(requestId);
-
-  // The frontend is served from a different origin, so the browser needs to be
-  // told which origins may call this API and that the Authorization header is
-  // allowed through.
-  const origins = new Set((env.CORS_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean));
-  app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin && (origins.has(origin) || origins.has('*'))) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Branch-Id, X-Request-Id');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Max-Age', '86400');
-    }
-    if (req.method === 'OPTIONS') return res.status(204).end();
-    next();
-  });
 
   app.use(
     pinoHttp({

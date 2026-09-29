@@ -58,21 +58,26 @@ export function repo<T extends QueryResultRow = QueryResultRow>(tx: Tx, table: s
 
       // Union of keys, so callers may omit optional fields on some rows.
       const columns = [...new Set(prepared.flatMap(Object.keys))].filter((c) => c in def.columns);
-      const params: unknown[] = [];
-      const tuples = prepared.map((row) => {
-        const slots = columns.map((c) => {
-          params.push(row[c] ?? null);
-          return `$${params.length}`;
+      // Postgres caps a statement at 65,535 parameters; stay safely under it.
+      const rowsPerChunk = Math.max(1, Math.floor(60_000 / columns.length));
+      const inserted: T[] = [];
+      for (let start = 0; start < prepared.length; start += rowsPerChunk) {
+        const params: unknown[] = [];
+        const tuples = prepared.slice(start, start + rowsPerChunk).map((row) => {
+          const slots = columns.map((c) => {
+            params.push(row[c] ?? null);
+            return `$${params.length}`;
+          });
+          return `(${slots.join(', ')})`;
         });
-        return `(${slots.join(', ')})`;
-      });
-
-      return tx.query<T>(
-        `insert into ${t} (${columns.map(quoteIdent).join(', ')})
-         values ${tuples.join(', ')}
-         returning *`,
-        params,
-      );
+        inserted.push(...(await tx.query<T>(
+          `insert into ${t} (${columns.map(quoteIdent).join(', ')})
+           values ${tuples.join(', ')}
+           returning *`,
+          params,
+        )));
+      }
+      return inserted;
     },
 
     async update(id: string, values: Row): Promise<T> {
@@ -129,6 +134,40 @@ export function repo<T extends QueryResultRow = QueryResultRow>(tx: Tx, table: s
       if (options.offset) parts.push(`offset ${Number(options.offset)}`);
 
       return tx.query<T>(parts.join(' '), params);
+    },
+
+    /**
+     * Keyset pagination — as fast on page 5,000 as on page 1. Newest first
+     * (UUIDv7 ids are time-ordered). Pass back `nextCursor` for the next page.
+     * Big tables should declare an index on ['id'] (becomes tenant_id, id).
+     */
+    async page(
+      where: Row = {},
+      options: { limit?: number; cursor?: string | null } = {},
+    ): Promise<{ rows: T[]; nextCursor: string | null }> {
+      const limit = Math.min(Math.max(Number(options.limit) || 50, 1), 200);
+      const params: unknown[] = [];
+      const clauses = Object.entries(where).map(([column, value]) => {
+        if (value === null) return `${quoteIdent(column)} is null`;
+        params.push(value);
+        return `${quoteIdent(column)} = $${params.length}`;
+      });
+      if (def.softDelete) clauses.push('deleted_at is null');
+      if (options.cursor) {
+        params.push(options.cursor);
+        clauses.push(`id < $${params.length}`);
+      }
+      params.push(limit + 1);
+
+      const rows = await tx.query<T>(
+        `select * from ${t}${clauses.length ? ` where ${clauses.join(' and ')}` : ''}
+          order by id desc
+          limit $${params.length}`,
+        params,
+      );
+      const hasMore = rows.length > limit;
+      if (hasMore) rows.pop();
+      return { rows, nextCursor: hasMore ? String(rows[rows.length - 1]!.id) : null };
     },
 
     async findOneWhere(where: Row): Promise<T | null> {

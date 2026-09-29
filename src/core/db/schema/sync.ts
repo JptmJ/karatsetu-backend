@@ -19,6 +19,7 @@ import { introspect } from './introspect.js';
 import { allTables } from './registry.js';
 import { logger } from '../../util/logger.js';
 import { env } from '../../config/env.js';
+import { buildStamp } from '../../util/version.js';
 
 export type SyncMode = 'off' | 'verify' | 'safe' | 'force';
 
@@ -57,7 +58,7 @@ function isAllowed(change: SchemaChange, mode: SyncMode): boolean {
   return change.risk === 'warn' && mode === 'safe';
 }
 
-export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = '0.1.0'): Promise<SyncResult> {
+export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = buildStamp()): Promise<SyncResult> {
   const startedAt = Date.now();
 
   if (mode === 'off') {
@@ -67,11 +68,10 @@ export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = '0.1.0
 
   const client = await pool.connect();
   try {
-    // Platform code touches every tenant's tables, so step outside RLS.
-    await client.query(`set local app.bypass_rls = 'on'`);
     await client.query('select pg_advisory_lock($1)', [ADVISORY_LOCK_KEY.toString()]);
 
     try {
+      await client.query(`set search_path to "${env.DATABASE_SCHEMA}", app, public, extensions`);
       await client.query(CHANGE_LOG_DDL);
 
       const live = await introspect(client, env.DATABASE_SCHEMA);
@@ -220,7 +220,6 @@ async function applyChange(client: PoolClient, change: SchemaChange, appVersion:
 export async function planSchema(pool: Pool): Promise<SchemaChange[]> {
   const client = await pool.connect();
   try {
-    await client.query(`set local app.bypass_rls = 'on'`);
     return diffSchema(await introspect(client, env.DATABASE_SCHEMA));
   } finally {
     client.release();

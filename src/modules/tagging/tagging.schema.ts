@@ -14,20 +14,14 @@ export const tagTemplateTable = defineTable({
   name: 'tag_template',
   module: 'tagging',
   softDelete: true,
-  comment: 'Label layouts. Dual-wing string tags are the common jewellery format.',
+  comment: 'Tag designs from Settings → Format & Print Designer. page holds the size in mm.',
   columns: {
     code: col.text({ notNull: true }),
     name: col.text({ notNull: true }),
-    format: col.enum(['string_tag_dual_wing', 'sticker', 'hang_tag', 'box_label'], {
-      notNull: true, default: "'string_tag_dual_wing'",
-    }),
-    width_mm: col.numeric(6, 2, { notNull: true, default: '85' }),
-    height_mm: col.numeric(6, 2, { notNull: true, default: '15' }),
-    barcode_type: col.enum(['code128', 'qr', 'datamatrix', 'ean13'], { notNull: true, default: "'code128'" }),
-    /** Which fields print on each wing, and where. */
-    layout: col.jsonb({ notNull: true, default: "'{}'::jsonb" }),
-    /** e.g. "Argox CP-2140" */
-    printer_model: col.text(),
+    /** The design from Settings → Format & Print Designer: page size, Fabric canvas and field bindings. */
+    page: col.jsonb({ notNull: true, default: "'{}'::jsonb" }),
+    canvas_json: col.text({ notNull: true, default: "''" }),
+    bindings: col.jsonb({ notNull: true, default: "'[]'::jsonb" }),
     is_default: col.bool({ notNull: true, default: 'false' }),
     is_active: col.bool({ notNull: true, default: 'true' }),
   },

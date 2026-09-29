@@ -37,9 +37,12 @@ export const branchTable = defineTable({
     pincode: col.text(),
     phone: col.text(),
     email: col.text(),
+    /** Principal place of business for GST. One per business. */
+    is_head_office: col.bool({ notNull: true, default: 'false' }),
     is_active: col.bool({ notNull: true, default: 'true' }),
   },
   uniques: [{ columns: ['code'] }],
+  indexes: [{ name: 'ux_branch_head_office', columns: ['is_head_office'], unique: true, where: 'is_head_office and deleted_at is null' }],
 });
 
 /** Storage locations inside a branch: counter, vault, window, karigar table. */
@@ -89,10 +92,17 @@ export const purityTable = defineTable({
     karat: col.numeric(5, 2, { comment: 'Null for silver and platinum.' }),
     /** Hallmarking applies to some purities and not others. */
     is_hallmarkable: col.bool({ notNull: true, default: 'true' }),
+    /** How the purity is written on screens and bills: 22K, 916 or 91.6%. */
+    notation: col.enum(['karat', 'fineness', 'percentage'], { notNull: true, default: "'karat'" }),
+    default_unit: col.enum(['g', 'kg', 'tola', 'oz'], { notNull: true, default: "'g'" }),
+    /** Pre-selected on forms for its metal. One per metal. */
+    is_default: col.bool({ notNull: true, default: 'false' }),
+    description: col.text(),
     is_active: col.bool({ notNull: true, default: 'true' }),
     sort_order: col.int({ notNull: true, default: '0' }),
   },
   uniques: [{ columns: ['metal_id', 'code'] }],
+  indexes: [{ name: 'ux_purity_default', columns: ['metal_id'], unique: true, where: 'is_default' }],
   checks: [
     { name: 'fineness_range', expression: 'fineness_percent > 0 and fineness_percent <= 100' },
   ],
@@ -106,6 +116,9 @@ export const itemCategoryTable = defineTable({
     code: col.text({ notNull: true }),
     name: col.text({ notNull: true }),
     hsn_code: col.text(),
+    sub_categories: col.jsonb({ notNull: true, default: "'[]'::jsonb", comment: 'Names, e.g. ["Temple", "Antique"].' }),
+    applicable_metals: col.jsonb({ notNull: true, default: "'[]'::jsonb", comment: 'Metal codes, e.g. ["GOLD", "SILVER"]. Empty = any.' }),
+    making_rule_id: col.fk('price_rule', { comment: 'Default making-charge rule for the category.' }),
     sort_order: col.int({ notNull: true, default: '0' }),
     is_active: col.bool({ notNull: true, default: 'true' }),
   },
@@ -177,12 +190,38 @@ export const partyTable = defineTable({
   indexes: [
     { columns: ['name'] },
     { columns: ['phone'] },
+    // Fuzzy search ("ramesh", "98765"). Global because a GIN index can't hold tenant_id's uuid
+    // without btree_gin; RLS still filters to the tenant. Revisit with btree_gin at large scale.
+    { name: 'gx_party_name_trgm', columns: ['name'], method: 'gin', opclass: 'gin_trgm_ops', global: true },
+    { name: 'gx_party_phone_trgm', columns: ['phone'], method: 'gin', opclass: 'gin_trgm_ops', global: true },
+    { name: 'gx_party_code_trgm', columns: ['code'], method: 'gin', opclass: 'gin_trgm_ops', global: true },
     { columns: ['is_customer'], where: 'is_customer = true' },
     { columns: ['is_supplier'], where: 'is_supplier = true' },
   ],
   checks: [
     { name: 'is_customer_or_supplier', expression: 'is_customer = true or is_supplier = true' },
   ],
+});
+
+export const DOCUMENT_TYPES = ['invoice', 'advance_receipt', 'old_gold_voucher', 'scheme_receipt', 'girvi_pawn_ticket'] as const;
+export const PAPER_SIZES = ['A4', 'A5', 'Thermal_80mm', 'Thermal_3inch'] as const;
+export const HEADER_STYLES = ['logo_top', 'letterhead_preprinted', 'minimal'] as const;
+
+/** Print settings for one kind of document: paper, header, what is shown, and the terms printed at the foot. */
+export const documentFormatTable = defineTable({
+  name: 'document_format',
+  module: 'masters',
+  columns: {
+    code: col.text({ notNull: true }),
+    doc_type: col.enum(DOCUMENT_TYPES, { notNull: true }),
+    title: col.text({ notNull: true }),
+    paper_size: col.enum(PAPER_SIZES, { notNull: true, default: "'A4'" }),
+    header_style: col.enum(HEADER_STYLES, { notNull: true, default: "'logo_top'" }),
+    numbering_doc_type: col.text({ comment: 'The numbering series whose number prints on it, e.g. sales_invoice.' }),
+    field_toggles: col.jsonb({ notNull: true, default: "'{}'::jsonb" }),
+    terms: col.text({ notNull: true, default: "''" }),
+  },
+  uniques: [{ columns: ['code'] }],
 });
 
 /** Module 12.6 — the daily rate every price on every document is derived from. */

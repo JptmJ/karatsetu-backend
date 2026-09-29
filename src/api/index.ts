@@ -6,10 +6,15 @@
  */
 import './routes.core.js';
 import './routes.master.js';
+import './routes.master-pricing.js';
+import './routes.master-setup.js';
+import './routes.master-import.js';
 import './routes.orders.js';
 import './routes.operations.js';
+import './routes.stock.js';
 import './routes.commercial.js';
 import './routes.users.js';
+import './routes.pricing.js';
 
 /* Platform (super admin) routes — mounted on a separate router in app.ts. */
 import './routes.platform.js';

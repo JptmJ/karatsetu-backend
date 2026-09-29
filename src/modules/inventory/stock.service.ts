@@ -2,14 +2,19 @@
  * Moving stock.
  *
  * Two rules hold everywhere:
- *   1. Nothing writes a balance directly. You append a movement; the balance
- *      follows automatically in the same transaction.
+ *   1. Nothing writes a balance directly. You append movements; the balances
+ *      follow in the same transaction.
  *   2. A movement is never edited or deleted. Undoing one means writing its
  *      mirror image, linked back to the original.
+ *
+ * However many lines a document has, posting it is two statements: one insert
+ * of every movement, and one upsert that adds each item + purity + location's
+ * change to its balance. The upsert locks each balance row it touches, so two
+ * counters selling the last bangle cannot both succeed.
  */
 import type { Tx } from '../../core/db/client.js';
 import { BusinessRuleError } from '../../core/errors/app-error.js';
-import { add, compare, div, isZero, mul, sub, type Decimal } from '../../core/util/decimal.js';
+import { add, compare, div, isZero, sub, type Decimal } from '../../core/util/decimal.js';
 import { newId } from '../../core/util/id.js';
 import { CONFIG } from '../../core/config/definitions.js';
 import { getConfig } from '../../core/config/config-service.js';
@@ -41,233 +46,151 @@ export interface MovementInput {
   sourceType: string;
   sourceId: string;
   sourceLineId?: string | null;
+  reversesMovementId?: string | null;
   movedAt?: Date;
   note?: string;
 }
 
-interface BalanceRow {
-  id: string;
-  quantity: Decimal;
-  gross_weight: Decimal;
-  net_weight: Decimal;
-  fine_weight: Decimal;
-  value: Decimal;
-}
+const COLUMNS = 20;
+const neg = (d: Decimal): Decimal => sub('0', d);
 
-/**
- * Applies a batch of movements atomically. Batching matters: a 40-line invoice
- * should touch the balance table once per item, not once per call.
- */
-export async function recordMovements(tx: Tx, movements: MovementInput[]): Promise<string[]> {
+/** Records movements and updates balances. Refuses to take stock below zero unless the business allows it. */
+export async function recordMovements(
+  tx: Tx, movements: MovementInput[], options: { allowNegative?: boolean } = {},
+): Promise<string[]> {
   if (movements.length === 0) return [];
+  const allowNegative = options.allowNegative ?? (await getConfig(tx, CONFIG.negativeStock));
 
-  const allowNegative = await getConfig(tx, CONFIG.negativeStock);
-  const ids: string[] = [];
-
-  for (const movement of movements) {
-    // A piece count on bulk metal would drift meaninglessly negative, so it is
-    // simply not kept. The weight is the stock figure for those items.
-    const quantity = movement.tracking === 'piece' ? (movement.quantity ?? '0') : '0';
-    const grossWeight = movement.grossWeight ?? '0';
-    const netWeight = movement.netWeight ?? '0';
-    const fine = movement.fineWeight ?? '0';
-    const value = movement.value ?? '0';
-    const id = newId();
-
-    await tx.query(
-      `insert into stock_movement
-         (id, tenant_id, moved_at, direction, reason, item_id, purity_id, location_id, piece_id,
-          quantity, gross_weight, net_weight, fine_weight, value,
-          source_type, source_id, source_line_id, note, created_by, updated_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)`,
-      [
-        id,
-        tx.context.tenantId,
-        movement.movedAt ?? new Date(),
-        movement.direction,
-        movement.reason,
-        movement.itemId,
-        movement.purityId ?? null,
-        movement.locationId,
-        movement.pieceId ?? null,
-        quantity,
-        grossWeight,
-        netWeight,
-        fine,
-        value,
-        movement.sourceType,
-        movement.sourceId,
-        movement.sourceLineId ?? null,
-        movement.note ?? null,
-        tx.context.userId,
-      ],
-    );
-
-    await applyToBalance(tx, movement, { quantity, grossWeight, netWeight, fine, value }, allowNegative);
-    ids.push(id);
-  }
-
-  return ids;
-}
-
-async function applyToBalance(
-  tx: Tx,
-  movement: MovementInput,
-  amounts: { quantity: Decimal; grossWeight: Decimal; netWeight: Decimal; fine: Decimal; value: Decimal },
-  allowNegative: boolean,
-): Promise<void> {
-  const key = [movement.itemId, movement.purityId ?? null, movement.locationId];
-
-  // `for update` serialises concurrent movements on the same item+location, so
-  // two tills selling the last bangle cannot both succeed.
-  const existing = await tx.maybeOne<BalanceRow>(
-    `select id, quantity, gross_weight, net_weight, fine_weight, value
-       from stock_balance
-      where item_id = $1 and purity_id is not distinct from $2 and location_id = $3
-      for update`,
-    key,
-  );
-
-  const sign = movement.direction === 'in' ? 1 : -1;
-  const shift = (current: Decimal, delta: Decimal): Decimal =>
-    sign === 1 ? add(current, delta) : sub(current, delta);
-
-  const current = existing ?? {
+  const rows = movements.map((m) => ({
+    ...m,
     id: newId(),
-    quantity: '0',
-    gross_weight: '0',
-    net_weight: '0',
-    fine_weight: '0',
-    value: '0',
-  };
+    // A piece count on bulk metal would drift meaninglessly negative, so it is not kept.
+    quantity: m.tracking === 'piece' ? (m.quantity ?? '0') : '0',
+    grossWeight: m.grossWeight ?? '0',
+    netWeight: m.netWeight ?? '0',
+    fineWeight: m.fineWeight ?? '0',
+    value: m.value ?? '0',
+  }));
 
-  const next = {
-    quantity: shift(current.quantity, amounts.quantity),
-    gross_weight: shift(current.gross_weight, amounts.grossWeight),
-    net_weight: shift(current.net_weight, amounts.netWeight),
-    fine_weight: shift(current.fine_weight, amounts.fine),
-    value: shift(current.value, amounts.value),
-  };
-
-  if (!allowNegative && sign === -1) {
-    const short =
-      movement.tracking === 'piece'
-        ? compare(next.quantity, '0') < 0 || compare(next.net_weight, '0') < 0
-        : compare(next.net_weight, '0') < 0;
-
-    if (short) {
-      const available =
-        movement.tracking === 'piece'
-          ? `${current.quantity} pcs / ${current.net_weight} g`
-          : `${current.net_weight} g`;
-      const requested =
-        movement.tracking === 'piece'
-          ? `${amounts.quantity} pcs / ${amounts.netWeight} g`
-          : `${amounts.netWeight} g`;
-
-      throw new BusinessRuleError(
-        `Not enough stock. Available: ${available} — tried to remove ${requested}.`,
-        'insufficient_stock',
-        { itemId: movement.itemId, locationId: movement.locationId, available: current, requested: amounts },
+  for (let start = 0; start < rows.length; start += 500) {
+    const params: unknown[] = [];
+    const tuples = rows.slice(start, start + 500).map((m) => {
+      params.push(
+        m.id, tx.context.tenantId, m.movedAt ?? new Date(), m.direction, m.reason, m.itemId, m.purityId ?? null,
+        m.locationId, m.pieceId ?? null, m.quantity, m.grossWeight, m.netWeight, m.fineWeight, m.value,
+        m.sourceType, m.sourceId, m.sourceLineId ?? null, m.reversesMovementId ?? null, m.note ?? null, tx.context.userId,
       );
-    }
-  }
-
-  const averageRate = isZero(next.net_weight) ? '0' : div(next.value, next.net_weight);
-
-  if (existing) {
-    await tx.query(
-      `update stock_balance
-          set quantity = $2, gross_weight = $3, net_weight = $4, fine_weight = $5,
-              value = $6, average_rate = $7, last_movement_at = now(), updated_at = now()
-        where id = $1`,
-      [existing.id, next.quantity, next.gross_weight, next.net_weight, next.fine_weight, next.value, averageRate],
-    );
-  } else {
-    await tx.query(
-      `insert into stock_balance
-         (id, tenant_id, item_id, purity_id, location_id, quantity, gross_weight, net_weight,
-          fine_weight, value, average_rate, last_movement_at, created_by, updated_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), $12, $12)`,
-      [
-        current.id,
-        tx.context.tenantId,
-        movement.itemId,
-        movement.purityId ?? null,
-        movement.locationId,
-        next.quantity,
-        next.gross_weight,
-        next.net_weight,
-        next.fine_weight,
-        next.value,
-        averageRate,
-        tx.context.userId,
-      ],
-    );
-  }
-}
-
-/** Undoes every movement a document made, by writing their mirror images. */
-export async function reverseMovementsFor(tx: Tx, sourceType: string, sourceId: string, note: string): Promise<void> {
-  const originals = await tx.query<{
-    id: string; direction: MovementDirection; reason: MovementInput['reason'];
-    item_id: string; purity_id: string | null; location_id: string; piece_id: string | null;
-    quantity: Decimal; gross_weight: Decimal; net_weight: Decimal; fine_weight: Decimal; value: Decimal;
-    source_line_id: string | null; tracking: 'lot' | 'piece';
-  }>(
-    `select sm.*, i.tracking
-       from stock_movement sm
-       join item i on i.id = sm.item_id
-      where sm.source_type = $1 and sm.source_id = $2 and sm.reverses_movement_id is null
-        and sm.id not in (select reverses_movement_id from stock_movement
-                           where reverses_movement_id is not null and source_id = $2)`,
-    [sourceType, sourceId],
-  );
-
-  const allowNegative = await getConfig(tx, CONFIG.negativeStock);
-
-  for (const original of originals) {
-    const flipped: MovementDirection = original.direction === 'in' ? 'out' : 'in';
-    const id = newId();
-
+      const base = params.length - COLUMNS;
+      return `(${Array.from({ length: COLUMNS }, (_, i) => `$${base + i + 1}`).join(', ')}, $${base + COLUMNS})`;
+    });
     await tx.query(
       `insert into stock_movement
          (id, tenant_id, moved_at, direction, reason, item_id, purity_id, location_id, piece_id,
           quantity, gross_weight, net_weight, fine_weight, value,
           source_type, source_id, source_line_id, reverses_movement_id, note, created_by, updated_by)
-       values ($1, $2, now(), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)`,
-      [
-        id, tx.context.tenantId, flipped, original.reason, original.item_id, original.purity_id,
-        original.location_id, original.piece_id, original.quantity, original.gross_weight,
-        original.net_weight, original.fine_weight, original.value, sourceType, sourceId,
-        original.source_line_id, original.id, note, tx.context.userId,
-      ],
-    );
-
-    await applyToBalance(
-      tx,
-      {
-        direction: flipped,
-        reason: original.reason,
-        itemId: original.item_id,
-        tracking: original.tracking,
-        purityId: original.purity_id,
-        locationId: original.location_id,
-        sourceType,
-        sourceId,
-      },
-      {
-        quantity: original.quantity,
-        grossWeight: original.gross_weight,
-        netWeight: original.net_weight,
-        fine: original.fine_weight,
-        value: original.value,
-      },
-      // A reversal must always be allowed through, even into negative stock —
-      // refusing it would leave the books in a worse state than the mistake.
-      allowNegative || true,
+       values ${tuples.join(', ')}`,
+      params,
     );
   }
+
+  // One signed change per balance row, applied in a fixed order so two
+  // documents touching the same rows never deadlock.
+  const changes = new Map<string, {
+    itemId: string; purityId: string | null; locationId: string; tracking: 'lot' | 'piece'; out: boolean;
+    quantity: Decimal; gross: Decimal; net: Decimal; fine: Decimal; value: Decimal;
+  }>();
+  for (const m of rows) {
+    const k = `${m.itemId}|${m.purityId ?? ''}|${m.locationId}`;
+    const c = changes.get(k) ?? {
+      itemId: m.itemId, purityId: m.purityId ?? null, locationId: m.locationId, tracking: m.tracking, out: false,
+      quantity: '0', gross: '0', net: '0', fine: '0', value: '0',
+    };
+    const signed = m.direction === 'in' ? (d: Decimal) => d : neg;
+    c.out ||= m.direction === 'out';
+    c.quantity = add(c.quantity, signed(m.quantity));
+    c.gross = add(c.gross, signed(m.grossWeight));
+    c.net = add(c.net, signed(m.netWeight));
+    c.fine = add(c.fine, signed(m.fineWeight));
+    c.value = add(c.value, signed(m.value));
+    changes.set(k, c);
+  }
+  const ordered = [...changes.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, c]) => c);
+
+  const params: unknown[] = [];
+  const tuples = ordered.map((c) => {
+    params.push(
+      newId(), tx.context.tenantId, c.itemId, c.purityId, c.locationId, c.quantity, c.gross, c.net, c.fine, c.value,
+      isZero(c.net) ? '0' : div(c.value, c.net), tx.context.userId,
+    );
+    const b = params.length - 12;
+    return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9}, $${b + 10}, $${b + 11}, now(), $${b + 12}, $${b + 12})`;
+  });
+  const balances = await tx.query<{
+    item_id: string; purity_id: string | null; location_id: string; quantity: Decimal; net_weight: Decimal;
+  }>(
+    `insert into stock_balance as b
+       (id, tenant_id, item_id, purity_id, location_id, quantity, gross_weight, net_weight, fine_weight, value,
+        average_rate, last_movement_at, created_by, updated_by)
+     values ${tuples.join(', ')}
+     on conflict (tenant_id, item_id, purity_id, location_id) do update set
+       quantity = b.quantity + excluded.quantity,
+       gross_weight = b.gross_weight + excluded.gross_weight,
+       net_weight = b.net_weight + excluded.net_weight,
+       fine_weight = b.fine_weight + excluded.fine_weight,
+       value = b.value + excluded.value,
+       average_rate = case when b.net_weight + excluded.net_weight = 0 then 0
+                           else (b.value + excluded.value) / (b.net_weight + excluded.net_weight) end,
+       last_movement_at = now(), updated_at = now(), updated_by = excluded.updated_by
+     returning item_id, purity_id, location_id, quantity, net_weight`,
+    params,
+  );
+
+  if (!allowNegative) {
+    for (const c of ordered) {
+      if (!c.out) continue;
+      const after = balances.find((b) => b.item_id === c.itemId && b.purity_id === c.purityId && b.location_id === c.locationId)!;
+      const short = compare(after.net_weight, '0') < 0 || (c.tracking === 'piece' && compare(after.quantity, '0') < 0);
+      if (!short) continue;
+      const available = c.tracking === 'piece'
+        ? `${sub(after.quantity, c.quantity)} pcs / ${sub(after.net_weight, c.net)} g`
+        : `${sub(after.net_weight, c.net)} g`;
+      const requested = c.tracking === 'piece' ? `${neg(c.quantity)} pcs / ${neg(c.net)} g` : `${neg(c.net)} g`;
+      throw new BusinessRuleError(
+        `Not enough stock. Available: ${available} — tried to remove ${requested}.`,
+        'insufficient_stock',
+        { itemId: c.itemId, locationId: c.locationId, available, requested },
+      );
+    }
+  }
+
+  return rows.map((m) => m.id);
+}
+
+/** Undoes every movement a document made, by writing their mirror images. */
+export async function reverseMovementsFor(tx: Tx, sourceType: string, sourceId: string, note: string): Promise<void> {
+  const originals = await tx.query<{
+    id: string; direction: MovementDirection; reason: MovementInput['reason']; tracking: 'lot' | 'piece';
+    item_id: string; purity_id: string | null; location_id: string; piece_id: string | null;
+    quantity: Decimal; gross_weight: Decimal; net_weight: Decimal; fine_weight: Decimal; value: Decimal;
+    source_line_id: string | null;
+  }>(
+    `select sm.*, i.tracking
+       from stock_movement sm
+       join item i on i.id = sm.item_id
+      where sm.source_type = $1 and sm.source_id = $2 and sm.reverses_movement_id is null
+        and not exists (select 1 from stock_movement r where r.reverses_movement_id = sm.id)`,
+    [sourceType, sourceId],
+  );
+
+  // A reversal must always go through, even into negative stock — refusing it
+  // would leave the books in a worse state than the mistake.
+  await recordMovements(tx, originals.map((o) => ({
+    direction: o.direction === 'in' ? 'out' as const : 'in' as const,
+    reason: o.reason, tracking: o.tracking, itemId: o.item_id, purityId: o.purity_id, locationId: o.location_id,
+    pieceId: o.piece_id, quantity: o.quantity, grossWeight: o.gross_weight, netWeight: o.net_weight,
+    fineWeight: o.fine_weight, value: o.value, sourceType, sourceId, sourceLineId: o.source_line_id,
+    reversesMovementId: o.id, note,
+  })), { allowNegative: true });
 }
 
 /** Rebuilds stock_balance from the movement journal. The safety net. */

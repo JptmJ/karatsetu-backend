@@ -1,6 +1,6 @@
 # RatnaGrid — Database Reference
 
-Generated from the schema definitions on 2026-09-20.
+Generated from the schema definitions on 2026-09-25.
 **Do not edit by hand** — run `npm run gen:docs`.
 
 68 tables · 1504 columns.

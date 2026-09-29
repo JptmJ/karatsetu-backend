@@ -249,19 +249,31 @@ defineRoute({
     'Only you can do this — nobody inside the business can create users. Give `branchId` to place the person at one branch; leave it out and they cover all branches. A branch has exactly one admin, so creating a second one for the same branch is refused with `409` naming whoever already holds the slot.',
   permission: 'platform.tenants.update', params: idParam,
   body: z.object({
-    email: z.string().email(), fullName: z.string().min(1),
-    password: z.string().min(8), role: roleCode,
-    phone: phone.optional(),
+    email: z.string().email().nullish(),
+    phone: phone.nullish(),
+    fullName: z.string().min(1),
+    password: z.string().min(8),
+    roleCode: z.string().min(1).default('sales'),
+    role: z.string().min(1).optional(),
     branchId: uuid.optional().describe('Their branch. Omit to cover all branches.'),
-  }),
+  }).refine((b) => b.email || b.phone, { message: 'Enter an email address or a mobile number.' }),
   responses: [
     { status: 201, description: 'User created.', schema: record },
     { status: 409, description: 'Email already used here, or that branch already has an admin.', schema: errorEnvelope },
   ],
   changelog: seed,
   handler: async (req, res) => {
+    const roleCode = req.body.roleCode ?? req.body.role ?? 'sales';
     const user = await createTenantUser(
-      param(req, 'id'), req.body,
+      param(req, 'id'),
+      {
+        email: req.body.email,
+        phone: req.body.phone,
+        fullName: req.body.fullName,
+        password: req.body.password,
+        roleCode,
+        branchId: req.body.branchId,
+      },
       { actorPlatformUserId: platformUserId(req), ip: req.ip },
     );
     res.status(201).json(user);
@@ -276,7 +288,8 @@ defineRoute({
   permission: 'platform.tenants.update',
   params: z.object({ id: uuid, userId: uuid }),
   body: z.object({
-    role: roleCode.optional(),
+    roleCode: z.string().min(1).optional(),
+    role: z.string().min(1).optional(),
     branchId: uuid.nullish().describe('Null moves them to all branches.'),
     isActive: z.boolean().optional(),
   }),
@@ -291,10 +304,10 @@ defineRoute({
     const userId = param(req, 'userId');
     const actor = platformUserId(req);
     let result: unknown = null;
-    if (req.body.role || req.body.branchId !== undefined) {
+    const targetRole = req.body.roleCode ?? req.body.role;
+    if (targetRole) {
       result = await changeUserRole(
-        tenantId, userId, req.body.role ?? undefined as never,
-        { actorPlatformUserId: actor, ip: req.ip, branchId: req.body.branchId },
+        tenantId, userId, targetRole, actor,
       );
     }
     if (req.body.isActive !== undefined) {

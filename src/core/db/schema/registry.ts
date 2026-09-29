@@ -72,10 +72,13 @@ export function defineTable(def: TableDef): ResolvedTable {
 
   for (const [name, column] of Object.entries(columns)) assertDefaultIsSql(def.name, name, column);
 
-  const indexes = [...(def.indexes ?? [])];
-  // Almost every query filters by tenant first, so give every tenant table that
-  // index up front rather than discovering it under load.
-  if (tenantScoped) indexes.unshift({ columns: ['tenant_id'] });
+  const indexes = (def.indexes ?? []).map((i) =>
+    tenantScoped && !i.global && !i.columns.includes('tenant_id')
+      ? { ...i, columns: ['tenant_id', ...i.columns] }
+      : i,
+  );
+  // Every tenant index now leads with tenant_id, so a bare (tenant_id) index is redundant unless nothing else exists.
+  if (tenantScoped && indexes.length === 0) indexes.unshift({ columns: ['tenant_id'] });
 
   // Tenant-scoped uniques must include tenant_id, otherwise two tenants could
   // never both have an invoice numbered "INV-001".

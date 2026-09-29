@@ -52,7 +52,11 @@ export interface IndexDef {
   nullsNotDistinct?: boolean;
   /** Raw SQL predicate for a partial index, e.g. `deleted_at is null`. */
   where?: string;
+  /** Opt out of the automatic tenant_id prefix (rare: cross-tenant lookups like token_hash). */
+  global?: boolean;
   method?: 'btree' | 'gin' | 'brin';
+  /** Operator class for every column, e.g. 'gin_trgm_ops' for fuzzy text search (method: 'gin'). */
+  opclass?: string;
 }
 
 export interface UniqueDef {

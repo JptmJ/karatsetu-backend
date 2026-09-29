@@ -42,6 +42,8 @@ export function normaliseDefault(raw: string | null): string | null {
   let value = raw.trim();
   value = value.replace(/::[a-zA-Z_ ]+(\([0-9, ]*\))?$/, '').trim();
   if (value.toLowerCase() === 'now()' || value.toLowerCase() === "('now'::text)") return 'now()';
+  if (value.toLowerCase() === 'current_date') return 'current_date';
+  if (value.toLowerCase() === 'current_timestamp') return 'current_timestamp';
   return value;
 }
 

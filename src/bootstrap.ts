@@ -17,6 +17,7 @@ import './modules/platform/platform.schema.js';
 
 /* reference data */
 import './modules/masters/masters.schema.js';
+import './modules/masters/pricing.schema.js';
 import './modules/numbering/numbering.schema.js';
 
 /* the books */

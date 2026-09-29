@@ -11,6 +11,9 @@ import { z } from 'zod';
 export const uuid = z.string().uuid();
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 
+/** Query-string boolean. Never use z.coerce.boolean() — it turns "false" into true. */
+export const boolParam = z.enum(['true', 'false']).transform((v) => v === 'true');
+
 /** Money and weight travel as strings so no value is ever rounded by JavaScript. */
 export const decimal = z
   .string()
@@ -19,9 +22,10 @@ export const decimal = z
 export const money = decimal.describe('Rupees, as a string. Never a float.');
 export const weight = decimal.describe('Grams, as a string.');
 
+/** Mobile or landline, written any common way: 98765 43210, +91-98765-43210, (022) 2344 8899. */
 export const phone = z
   .string()
-  .regex(/^[0-9+\-\s]{10,15}$/, 'Enter a valid 10–15 digit phone number');
+  .refine((v) => /^[0-9+\-\s()]+$/.test(v) && /^\d{10,13}$/.test(v.replace(/\D/g, '')), 'Enter a phone number with 10 to 13 digits.');
 
 export const gstin = z
   .string()

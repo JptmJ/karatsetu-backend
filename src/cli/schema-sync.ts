@@ -3,10 +3,12 @@ import '../bootstrap.js';
 import { pool, closePool, checkConnection } from '../core/db/pool.js';
 import { syncSchema } from '../core/db/schema/sync.js';
 import { syncMode } from '../core/config/env.js';
+import { buildStamp } from '../core/util/version.js';
 
 async function main(): Promise<void> {
   await checkConnection();
-  const result = await syncSchema(pool, syncMode === 'off' ? 'safe' : syncMode);
+  const mode = syncMode === 'force' || process.env.SCHEMA_SYNC_MODE === 'force' ? 'force' : 'safe';
+  const result = await syncSchema(pool, mode, buildStamp());
   console.log(
     `\n${result.applied.length} applied · ${result.blocked.length} blocked · ${result.skipped.length} failed  (${result.durationMs}ms)\n`,
   );

@@ -57,6 +57,14 @@ describe('schema diff safety rules', () => {
     expect(byColumn.get('defaulted')?.risk).toBe('safe');
   });
 
+  it('drops a unique rule the model no longer has, and keeps the ones it does', () => {
+    defineTable({ name: 'widget', module: 'test', tenantScoped: false, timestamps: false, columns: { code: col.text() }, uniques: [{ columns: ['code'] }] });
+    const table = liveTable('widget', { id: { type: 'uuid', notNull: true }, code: { type: 'text' } });
+    for (const name of ['uq_widget_code', 'uq_widget_old']) table.constraints.set(name, { name, kind: 'u', definition: '' });
+    const drops = diffSchema(new Map([['widget', table]])).filter((c) => c.kind === 'drop_constraint');
+    expect(drops.map((c) => [c.object, c.risk])).toEqual([['uq_widget_old', 'safe']]);
+  });
+
   it('never drops a column or a table on its own', () => {
     defineTable({ name: 'widget', module: 'test', timestamps: false, tenantScoped: false, columns: {} });
 

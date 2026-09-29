@@ -1,23 +1,6 @@
 /**
- * The role model.
- *
- * Deliberately small, and deliberately closed:
- *
- *   Super Admin ──► creates tenants, branches, and every user in them
- *        │
- *        └──► Branch Admin ──► runs one branch (or all of them)
- *             Sales / Accountant / Store Keeper ──► do the work
- *
- * Two rules shape everything below.
- *
- * **Only the super admin manages users.** Nobody inside a jewellery business
- * can create, promote or deactivate anyone — not even the branch admin. That
- * keeps every account on the platform traceable to one person, and means a
- * compromised shop account cannot mint more accounts.
- *
- * **A branch has exactly one admin.** Either each branch has its own, or one
- * admin covers all branches. Enforced by a partial unique index on `app_user`,
- * so it holds even if a service forgets to check.
+ * Role TEMPLATES. Every tenant gets these seeded as editable `role` rows
+ * (is_system = true). Access is decided by the tenant's rows, not by this file.
  */
 
 /**
@@ -40,6 +23,13 @@ export type PlatformRoleCode = typeof SUPER_ADMIN.code;
  */
 export const TENANT_ROLES = [
   {
+    code: 'owner',
+    name: 'Owner',
+    description: 'Full access to the business, including staff, roles and settings.',
+    isBranchAdmin: true,
+    permissions: ['*'],
+  },
+  {
     code: 'admin',
     name: 'Branch Admin',
     description:
@@ -58,7 +48,7 @@ export const TENANT_ROLES = [
        * deliberately absent, and the endpoints behind them no longer exist —
        * staff are the super admin's to manage.
        */
-      'settings.users.view',
+      'settings.users.view', 'settings.users.manage', 'settings.roles.view',
     ],
   },
   {
@@ -77,6 +67,17 @@ export const TENANT_ROLES = [
     ],
   },
   {
+    code: 'cashier',
+    name: 'Cashier',
+    description: 'Takes payment and closes bills. Cannot give discounts above the approval limit.',
+    isBranchAdmin: false,
+    permissions: [
+      'pos.view', 'pos.create', 'orders.view', 'stock.view',
+      'oldgold.view', 'schemes.collection.view', 'schemes.collection.create',
+      'master.customer.view', 'master.customer.create', 'master.rates.view',
+    ],
+  },
+  {
     code: 'accountant',
     name: 'Accountant',
     description: 'Books, ledgers, GST and reports. Read-only on operations.',
@@ -92,10 +93,11 @@ export const TENANT_ROLES = [
   {
     code: 'storekeeper',
     name: 'Store Keeper',
-    description: 'Receives goods, tags pieces and moves stock between counters and the vault.',
+    description: 'Receives goods, tags pieces, moves stock and counts it. Cannot adjust stock or post a count.',
     isBranchAdmin: false,
     permissions: [
-      'stock.*', 'tagging.*',
+      'stock.view', 'stock.opening.create', 'stock.transfer.create', 'stock.transfer.post', 'stock.transfer.cancel',
+      'stock.count.create', 'tagging.*',
       'pos.purchase.view', 'pos.purchase.create',
       'master.item.view', 'master.purity.view', 'master.branch.view', 'master.rates.view',
     ],

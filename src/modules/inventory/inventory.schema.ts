@@ -59,13 +59,128 @@ export const stockPieceTable = defineTable({
     /** Days in stock is the single most useful retail number; derived from received_at. */
     image_urls: col.jsonb({ notNull: true, default: "'[]'::jsonb" }),
     attributes: col.jsonb({ notNull: true, default: "'{}'::jsonb" }),
+    /** Null = still in the print queue. */
+    label_printed_at: col.timestamptz(),
+    label_print_count: col.int({ notNull: true, default: '0' }),
   },
   uniques: [{ columns: ['tag_number'] }],
   indexes: [
+    { columns: ['id'] },
     { columns: ['item_id'] },
     { columns: ['location_id', 'status'] },
-    { columns: ['huid'], where: 'huid is not null' },
+    // One HUID per piece in stock. A melted or written-off piece releases its HUID.
+    { name: 'ux_stock_piece_huid', columns: ['huid'], unique: true, where: "huid is not null and status not in ('melted', 'written_off')" },
     { columns: ['status', 'received_at'] },
+    { columns: ['id'], name: 'ix_stock_piece_print_queue', where: 'label_printed_at is null' },
+    // Search as you type on tag number and HUID. Global for the same reason as party's: RLS still filters.
+    { name: 'gx_stock_piece_tag_trgm', columns: ['tag_number'], method: 'gin', opclass: 'gin_trgm_ops', global: true },
+    { name: 'gx_stock_piece_huid_trgm', columns: ['huid'], method: 'gin', opclass: 'gin_trgm_ops', global: true },
+  ],
+});
+
+/**
+ * Moving stock between locations. Within a branch it completes at once; between
+ * branches it goes in transit (to the destination's transit location) until the
+ * other branch receives it.
+ */
+export const stockTransferTable = defineTable({
+  name: 'stock_transfer',
+  module: 'inventory',
+  columns: {
+    doc_number: col.text({ notNull: true }),
+    from_branch_id: col.fk('branch', { notNull: true }),
+    from_location_id: col.fk('stock_location', { notNull: true }),
+    to_branch_id: col.fk('branch', { notNull: true }),
+    to_location_id: col.fk('stock_location', { notNull: true }),
+    status: col.enum(['in_transit', 'received', 'cancelled'], { notNull: true }),
+    piece_count: col.int({ notNull: true, default: '0' }),
+    gross_weight: col.weight({ notNull: true, default: '0' }),
+    note: col.text(),
+    dispatched_at: col.timestamptz({ notNull: true, default: 'now()' }),
+    dispatched_by: col.fk('app_user'),
+    received_at: col.timestamptz(),
+    received_by: col.fk('app_user'),
+  },
+  uniques: [{ columns: ['doc_number'] }],
+  indexes: [{ columns: ['status', 'to_branch_id'] }, { columns: ['id'] }],
+});
+
+export const stockTransferLineTable = defineTable({
+  name: 'stock_transfer_line',
+  module: 'inventory',
+  columns: {
+    stock_transfer_id: col.fk('stock_transfer', { notNull: true, onDelete: 'cascade' }),
+    piece_id: col.fk('stock_piece', { comment: 'Set for a tagged piece; lots carry item, purity and weights.' }),
+    item_id: col.fk('item', { notNull: true }),
+    purity_id: col.fk('purity'),
+    quantity: col.numeric(14, 3, { notNull: true, default: '0' }),
+    gross_weight: col.weight({ notNull: true, default: '0' }),
+    net_weight: col.weight({ notNull: true, default: '0' }),
+    fine_weight: col.weight({ notNull: true, default: '0' }),
+    value: col.money({ notNull: true, default: '0' }),
+  },
+  indexes: [{ columns: ['stock_transfer_id'] }],
+});
+
+export const ADJUSTMENT_REASONS = ['shortage', 'damage', 'loss', 'write_off', 'found', 'weighing_correction', 'stock_count'] as const;
+
+/** A stock correction. Its movements are its lines; posting is final. */
+export const stockAdjustmentTable = defineTable({
+  name: 'stock_adjustment',
+  module: 'inventory',
+  columns: {
+    doc_number: col.text({ notNull: true }),
+    branch_id: col.fk('branch', { notNull: true }),
+    reason: col.enum(ADJUSTMENT_REASONS, { notNull: true }),
+    note: col.text({ notNull: true }),
+    source_type: col.text({ comment: 'stock_count or stock_piece when posted from those.' }),
+    source_id: col.uuid(),
+    piece_count: col.int({ notNull: true, default: '0' }),
+    net_weight_in: col.weight({ notNull: true, default: '0' }),
+    net_weight_out: col.weight({ notNull: true, default: '0' }),
+    value: col.money({ notNull: true, default: '0', comment: 'Net value change at cost; negative is a loss.' }),
+  },
+  uniques: [{ columns: ['doc_number'] }],
+  indexes: [{ columns: ['id'] }],
+});
+
+/** A physical count of one location: tags are scanned, lots are weighed. */
+export const stockCountTable = defineTable({
+  name: 'stock_count',
+  module: 'inventory',
+  columns: {
+    doc_number: col.text({ notNull: true }),
+    branch_id: col.fk('branch', { notNull: true }),
+    location_id: col.fk('stock_location', { notNull: true }),
+    status: col.enum(['open', 'posted', 'cancelled'], { notNull: true, default: "'open'" }),
+    note: col.text(),
+    posted_at: col.timestamptz(),
+    posted_by: col.fk('app_user'),
+    adjustment_id: col.fk('stock_adjustment'),
+  },
+  uniques: [{ columns: ['doc_number'] }],
+  indexes: [{ columns: ['location_id', 'status'] }, { columns: ['id'] }],
+});
+
+export const stockCountLineTable = defineTable({
+  name: 'stock_count_line',
+  module: 'inventory',
+  columns: {
+    stock_count_id: col.fk('stock_count', { notNull: true, onDelete: 'cascade' }),
+    kind: col.enum(['piece', 'lot'], { notNull: true }),
+    /** piece: what was scanned, and what it turned out to be. */
+    tag_number: col.text(),
+    piece_id: col.fk('stock_piece'),
+    outcome: col.enum(['found', 'elsewhere', 'unknown', 'lot'], { notNull: true }),
+    /** lot: the weight actually on the scale. */
+    item_id: col.fk('item'),
+    purity_id: col.fk('purity'),
+    counted_net_weight: col.weight(),
+  },
+  uniques: [{ columns: ['stock_count_id', 'tag_number'] }],
+  indexes: [
+    { columns: ['stock_count_id'] },
+    { name: 'ux_stock_count_line_lot', columns: ['stock_count_id', 'item_id', 'purity_id'], unique: true, where: "kind = 'lot'" },
   ],
 });
 
