@@ -68,7 +68,12 @@ export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = buildS
 
   const client = await pool.connect();
   try {
-    await client.query('select pg_advisory_lock($1)', [ADVISORY_LOCK_KEY.toString()]);
+    // The whole sync is one transaction holding a transaction-level lock. A
+    // session lock would outlive a process killed mid-sync (a dev-server
+    // restart) on a pooled connection and block every later sync; this one is
+    // released by the database the moment the transaction or connection ends.
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock($1)', [ADVISORY_LOCK_KEY.toString()]);
 
     try {
       await client.query(`set search_path to "${env.DATABASE_SCHEMA}", app, public, extensions`);
@@ -82,6 +87,7 @@ export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = buildS
           { tables: allTables().length },
           'Database matches the application model. Nothing to change.',
         );
+        await client.query('commit');
         return { mode, applied: [], blocked: [], skipped: [], durationMs: Date.now() - startedAt };
       }
 
@@ -132,9 +138,11 @@ export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = buildS
         'Schema sync finished.',
       );
 
+      await client.query('commit');
       return { mode, applied, blocked, skipped, durationMs: Date.now() - startedAt };
-    } finally {
-      await client.query('select pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY.toString()]);
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined);
+      throw error;
     }
   } finally {
     client.release();
@@ -145,7 +153,7 @@ export async function syncSchema(pool: Pool, mode: SyncMode, appVersion = buildS
 const BATCH_SIZE = 25;
 
 /**
- * Applies a whole batch in one transaction. Returns false if anything in it
+ * Applies a whole batch under one savepoint. Returns false if anything in it
  * failed, in which case the caller falls back to applying them individually.
  * Nothing is logged here — a batch failure is expected and recoverable.
  */
@@ -153,7 +161,7 @@ async function applyBatch(client: PoolClient, batch: SchemaChange[], appVersion:
   if (batch.length === 0) return true;
   const startedAt = Date.now();
   try {
-    await client.query('begin');
+    await client.query('savepoint sync_batch');
     for (const change of batch) {
       for (const statement of change.sql) await client.query(statement);
     }
@@ -173,22 +181,22 @@ async function applyBatch(client: PoolClient, batch: SchemaChange[], appVersion:
        values ${tuples.join(', ')}`,
       values,
     );
-    await client.query('commit');
+    await client.query('release savepoint sync_batch');
     return true;
   } catch {
-    await client.query('rollback').catch(() => undefined);
+    await client.query('rollback to savepoint sync_batch').catch(() => undefined);
     return false;
   }
 }
 
 /**
- * The slow, precise path: one change, one transaction, and a clear log line if
+ * The slow, precise path: one change, one savepoint, and a clear log line if
  * it fails. Used to isolate whichever statement broke a batch.
  */
 async function applyChange(client: PoolClient, change: SchemaChange, appVersion: string): Promise<boolean> {
   const startedAt = Date.now();
   try {
-    await client.query('begin');
+    await client.query('savepoint sync_change');
     for (const statement of change.sql) await client.query(statement);
     await client.query(
       `insert into _schema_change_log (kind, risk, table_name, object_name, description, statements, app_version, duration_ms)
@@ -204,10 +212,10 @@ async function applyChange(client: PoolClient, change: SchemaChange, appVersion:
         Date.now() - startedAt,
       ],
     );
-    await client.query('commit');
+    await client.query('release savepoint sync_change');
     return true;
   } catch (error) {
-    await client.query('rollback').catch(() => undefined);
+    await client.query('rollback to savepoint sync_change').catch(() => undefined);
     logger.error(
       { err: error, table: change.table, sql: change.sql },
       `Could not apply: ${change.description}`,

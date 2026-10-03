@@ -119,10 +119,10 @@ export async function setConfig(
   tx: Tx,
   key: string,
   value: unknown,
-  options: { branchId?: string | null; reason?: string } = {},
+  options: { branchId?: string | null; reason?: string; allowSecret?: boolean } = {},
 ): Promise<void> {
   const definition = getConfigDefinition(key);
-  if (!definition) throw new ValidationError(`Unknown setting "${key}"`);
+  if (!definition || (definition.secret && !options.allowSecret)) throw new ValidationError(`Unknown setting "${key}"`);
 
   const parsed = definition.schema.safeParse(value);
   if (!parsed.success) {
@@ -153,7 +153,7 @@ export async function describeConfig(tx: Tx): Promise<
   const layers = await load(tx);
   const branchId = tx.context.branchId;
 
-  return allConfigDefinitions().map((definition) => {
+  return allConfigDefinitions().filter((definition) => !definition.secret).map((definition) => {
     let source: 'default' | 'tenant' | 'branch' = 'default';
     let value: unknown = definition.default;
 

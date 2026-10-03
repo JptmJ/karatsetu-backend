@@ -189,8 +189,19 @@ function diffDroppedColumns(
   current: LiveSchema extends Map<string, infer T> ? T : never,
   changes: SchemaChange[],
 ): void {
-  for (const [name] of current.columns) {
+  for (const [name, liveCol] of current.columns) {
     if (name in table.columns || NEVER_AUTO_DROP.has(name)) continue;
+    // Kept for its data, but the code no longer fills it: a NOT NULL without a default would refuse every new row.
+    if (liveCol.notNull && liveCol.default === null) {
+      changes.push({
+        kind: 'drop_not_null',
+        risk: 'safe',
+        table: table.name,
+        object: name,
+        description: `allow NULL in retired column ${table.name}.${name} so new rows can be saved`,
+        sql: [`alter table ${quoteIdent(table.name)} alter column ${quoteIdent(name)} drop not null`],
+      });
+    }
     changes.push({
       kind: 'drop_column',
       risk: 'destructive',
@@ -238,6 +249,22 @@ function diffTableInternals(
       if (expr) {
         const cname = boundedName([table.name, name], 'ck');
         wantedConstraints.add(cname);
+        // A list of allowed values that changed (a new payment kind, a new reason) is replaced.
+        const quoted = (sql: string) => [...sql.matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1]).sort().join('|');
+        const live = constraints.get(cname);
+        if (live && quoted(expr) && quoted(live.definition) !== quoted(expr)) {
+          changes.push({
+            kind: 'add_constraint',
+            risk: 'warn',
+            table: table.name,
+            object: cname,
+            description: `update the allowed values of ${table.name}.${name}`,
+            sql: [
+              `alter table ${quoteIdent(table.name)} drop constraint ${quoteIdent(cname)}`,
+              `alter table ${quoteIdent(table.name)} add constraint ${quoteIdent(cname)} check (${expr})`,
+            ],
+          });
+        }
         if (!constraints.has(cname)) {
           changes.push({
             kind: 'add_constraint',

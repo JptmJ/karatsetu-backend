@@ -5,7 +5,7 @@
  * into the frontend. Every type here comes from the schema that validates the
  * real request, so a mismatch between this file and the server is impossible.
  *
- * Generated 2026-09-29T12:59:12.393Z from 178 endpoints.
+ * Generated 2026-09-30T14:46:48.069Z from 216 endpoints.
  */
 
 export interface ApiError {
@@ -821,8 +821,6 @@ export function createClient(options: ClientOptions) {
       default_purity_id?: string;
       /** 7113 for jewellery articles. */
       hsn_code?: string;
-      default_making_rate?: string;
-      default_wastage_percent?: string;
       uom?: "gram" | "piece" | "carat" | "millilitre";
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', "/api/master/items", { body });
@@ -839,8 +837,6 @@ export function createClient(options: ClientOptions) {
       category_id?: string | null;
       default_purity_id?: string | null;
       hsn_code?: unknown;
-      default_making_rate?: string | null;
-      default_wastage_percent?: string | null;
       is_active?: boolean;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/master/items/${encodeURIComponent(params.id)}`, { body });
@@ -1503,7 +1499,8 @@ export function createClient(options: ClientOptions) {
     postMasterPricerules(body: {
       code: string;
       name: string;
-      applies_to: "making" | "wastage" | "stone" | "hallmark" | "discount";
+      /** Stones are priced from the value on each tag; discounts are given on the bill, on making and wastage. */
+      applies_to: "making" | "wastage" | "hallmark";
       basis: "per_gram" | "percent" | "flat" | "slab" | "hybrid";
       rate?: string | null;
       flat_amount?: string | null;
@@ -1535,7 +1532,8 @@ export function createClient(options: ClientOptions) {
      */
     patchMasterPricerulesById(params: { id: string }, body: {
       name?: string;
-      applies_to?: "making" | "wastage" | "stone" | "hallmark" | "discount";
+      /** Stones are priced from the value on each tag; discounts are given on the bill, on making and wastage. */
+      applies_to?: "making" | "wastage" | "hallmark";
       basis?: "per_gram" | "percent" | "flat" | "slab" | "hybrid";
       rate?: string | null;
       flat_amount?: string | null;
@@ -2122,85 +2120,423 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', `/api/orders/${encodeURIComponent(params.id)}/acknowledge`, { body });
     },
     /**
-     * Create a sales invoice (draft)
+     * Old Gold settings in force
      *
-     * Prices every line server-side from the rate master and the tenant’s making/wastage config, then applies GST — CGST+SGST within the state, IGST across it, zero-rated for export. Creates a draft; nothing moves until you post it.
-     * `POST /api/pos/invoices`
-     * Requires `pos.create`.
+     * Valuation basis, rate source, margin, melting loss, estimate, buyback, cash limit, own-jewellery terms, identity rules, hold days and register columns. Read-only here; changed in Settings.
+     * `GET /api/oldgold/settings`
+     * Requires `oldgold.view`.
      */
-    postPosInvoices(body: {
-      customerId: string;
-      branchId: string;
-      docDate: string;
-      channel?: "counter" | "wholesale" | "export" | "online";
-      salespersonId?: string;
-      /** Rupees, as a string. Never a float. */
-      otherCharges?: string;
-      notes?: string;
+    getOldgoldSettings(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/oldgold/settings");
+    },
+    /**
+     * Value old gold as it will be credited
+     *
+     * The same valuation an intake saves, from Old Gold settings: fine or purity basis, rate, margin, melting loss, own-jewellery terms. Nothing is saved.
+     * `POST /api/oldgold/quote`
+     * Requires `oldgold.view`.
+     */
+    postOldgoldQuote(body: {
       lines: Array<{
-        itemId: string;
-        purityId?: string | null;
-        /** Set when selling a specific tagged piece. */
-        pieceId?: string | null;
-        locationId?: string | null;
-        description?: string;
-        quantity?: string;
+        description: string;
+        metalId?: string;
+        itemCategoryId?: string | null;
         /** Grams, as a string. */
         grossWeight: string;
         /** Grams, as a string. */
         stoneWeight?: string;
-        /** Omit to use today’s broadcast rate. */
-        ratePerGram?: string;
-        makingBasis?: "per_gram" | "percent" | "flat";
-        makingRate?: string;
-        wastagePercent?: string;
-        /** Rupees, as a string. Never a float. */
-        stoneAmount?: string;
-        /** Rupees, as a string. Never a float. */
-        discountAmount?: string;
-        /** Rupees, as a string. Never a float. */
-        hallmarkCharge?: string;
-        gstRate?: string;
-        notes?: string;
-      }>;
-      /** A sale is routinely settled by several tenders at once. */
-      payments?: Array<{
-        mode: "cash" | "card" | "upi" | "bank_transfer" | "cheque" | "credit" | "old_gold" | "scheme" | "advance";
-        /** Rupees, as a string. Never a float. */
-        amount: string;
-        reference?: string;
-        accountId?: string;
+        /** Grams, as a string. */
+        dirtWeight?: string;
+        testMethod: "xrf" | "touchstone" | "hallmark" | "estimate";
+        /** As tested or estimated, e.g. 91.2. For the shop’s own piece its purity is used when left out. */
+        testedPurityPercent?: string;
+        declaredPurityPercent?: string;
+        testInstrument?: string;
+        huid?: string;
+        /** Tag number or HUID of a piece this shop sold: own-jewellery terms apply. */
+        ownPiece?: string;
+        /** Used only when Old Gold settings let staff change the melting loss. */
+        lossPercent?: string;
         notes?: string;
       }>;
     }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/pos/invoices", { body });
+      return request<Record<string, unknown>>('POST', "/api/oldgold/quote", { body });
     },
     /**
-     * Post an invoice — stock out, books updated
+     * Take old gold in
      *
-     * The moment everything happens, in one transaction: stock leaves at cost, revenue and GST are recognised, the customer is debited for any balance, and the piece is marked sold. After this the invoice is read-only.
-     * `POST /api/pos/invoices/:id/post`
-     * Requires `pos.post`.
+     * Posts at once: old gold into stock at the location, its value credited to the customer. `exchange` keeps the credit to spend on a bill or as advance; `buyback` pays it out now (needs `payout`). Proof of identity and PAN are asked as Old Gold settings and the ₹2 lakh rule say; cash payouts follow the daily cash limit.
+     * `POST /api/oldgold/intakes`
+     * Requires `oldgold.create`.
      */
-    postPosInvoicesByIdPost(params: { id: string }): Promise<{
-      invoice: Record<string, unknown>;
-      voucherId: string;
-      voucherNumber: string;
-      /** Rupees, as a string. Never a float. */
-      costOfGoodsSold: string;
+    postOldgoldIntakes(body: {
+      customerId: string;
+      locationId?: string;
+      settlement: "exchange" | "buyback";
+      payout?: {
+        paymentMethodId: string;
+        reference?: string;
+      };
+      idProof?: {
+        type: "aadhaar" | "pan" | "voter_id" | "driving_licence" | "passport" | "other";
+        number: string;
+      };
+      pan?: string;
+      notes?: string;
+      lines: Array<{
+        description: string;
+        metalId?: string;
+        itemCategoryId?: string | null;
+        /** Grams, as a string. */
+        grossWeight: string;
+        /** Grams, as a string. */
+        stoneWeight?: string;
+        /** Grams, as a string. */
+        dirtWeight?: string;
+        testMethod: "xrf" | "touchstone" | "hallmark" | "estimate";
+        /** As tested or estimated, e.g. 91.2. For the shop’s own piece its purity is used when left out. */
+        testedPurityPercent?: string;
+        declaredPurityPercent?: string;
+        testInstrument?: string;
+        huid?: string;
+        /** Tag number or HUID of a piece this shop sold: own-jewellery terms apply. */
+        ownPiece?: string;
+        /** Used only when Old Gold settings let staff change the melting loss. */
+        lossPercent?: string;
+        notes?: string;
+      }>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/oldgold/intakes", { body });
+    },
+    /**
+     * Old gold intakes
+     *
+     * `GET /api/oldgold/intakes`
+     * Requires `oldgold.view`.
+     */
+    getOldgoldIntakes(query?: {
+      customerId?: string;
+      status?: "posted" | "cancelled";
+      /** Voucher number, customer name or mobile. */
+      search?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
     }> {
       return request<{
-      invoice: Record<string, unknown>;
-      voucherId: string;
-      voucherNumber: string;
-      /** Rupees, as a string. Never a float. */
-      costOfGoodsSold: string;
-    }>('POST', `/api/pos/invoices/${encodeURIComponent(params.id)}/post`);
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/oldgold/intakes", { query });
     },
     /**
-     * Cancel an invoice
+     * One intake, as it prints
      *
-     * A posted invoice is reversed, never edited — stock comes back and mirrored ledger entries are written, leaving both the original and the correction visible.
+     * `GET /api/oldgold/intakes/:id`
+     * Requires `oldgold.view`.
+     */
+    getOldgoldIntakesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/oldgold/intakes/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Pay out old-gold credit
+     *
+     * Pays the customer some or all of what is left of an intake’s credit (a buyback after all). Same identity, PAN and cash rules as a buyback.
+     * `POST /api/oldgold/intakes/:id/payout`
+     * Requires `oldgold.payout`.
+     */
+    postOldgoldIntakesByIdPayout(params: { id: string }, body: {
+      paymentMethodId: string;
+      /** Rupees, as a string. Never a float. */
+      amount?: string;
+      reference?: string;
+      idProof?: {
+        type: "aadhaar" | "pan" | "voter_id" | "driving_licence" | "passport" | "other";
+        number: string;
+      };
+      pan?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/oldgold/intakes/${encodeURIComponent(params.id)}/payout`, { body });
+    },
+    /**
+     * Cancel an intake entered by mistake
+     *
+     * Only while nothing is melted, nothing was paid out and the credit is unspent. One taken in on a bill is cancelled with the bill.
+     * `POST /api/oldgold/intakes/:id/cancel`
+     * Requires `oldgold.cancel`.
+     */
+    postOldgoldIntakesByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/oldgold/intakes/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Old gold waiting to be melted, and at refiners
+     *
+     * `GET /api/oldgold/stock`
+     * Requires `oldgold.view`.
+     */
+    getOldgoldStock(query?: {
+      metalId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/oldgold/stock", { query });
+    },
+    /**
+     * Melt old gold, or send it to a refiner
+     *
+     * `melt`: in-house, with what came out (bullion item, purity, weight, assay). `refine`: sent to `refinerId`, received later. One metal per batch; the hold period in settings applies.
+     * `POST /api/oldgold/melt-batches`
+     * Requires `oldgold.melt`.
+     */
+    postOldgoldMeltbatches(body: {
+      kind: "melt" | "refine";
+      itemIds: Array<string>;
+      refinerId?: string;
+      output?: {
+        outputItemId: string;
+        outputPurityId: string;
+        /** Grams, as a string. */
+        outputWeight: string;
+        assayPercent?: string;
+        locationId?: string;
+      };
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/oldgold/melt-batches", { body });
+    },
+    /**
+     * Melt and refine batches
+     *
+     * `GET /api/oldgold/melt-batches`
+     * Requires `oldgold.view`.
+     */
+    getOldgoldMeltbatches(query?: {
+      status?: "melted" | "sent" | "received" | "cancelled";
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/oldgold/melt-batches", { query });
+    },
+    /**
+     * One batch with the old gold in it
+     *
+     * `GET /api/oldgold/melt-batches/:id`
+     * Requires `oldgold.view`.
+     */
+    getOldgoldMeltbatchesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/oldgold/melt-batches/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Receive refined metal
+     *
+     * What came back from the refiner (bullion item, purity, weight, assay) and the refining charge, which is owed to the refiner.
+     * `POST /api/oldgold/melt-batches/:id/receive`
+     * Requires `oldgold.melt`.
+     */
+    postOldgoldMeltbatchesByIdReceive(params: { id: string }, body: {
+      outputItemId: string;
+      outputPurityId: string;
+      /** Grams, as a string. */
+      outputWeight: string;
+      assayPercent?: string;
+      locationId?: string;
+      /** Rupees, as a string. Never a float. */
+      refiningCharge?: string;
+      certificateNumber?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/oldgold/melt-batches/${encodeURIComponent(params.id)}/receive`, { body });
+    },
+    /**
+     * Cancel a batch
+     *
+     * While its bullion is still in stock. The old gold returns, unmelted.
+     * `POST /api/oldgold/melt-batches/:id/cancel`
+     * Requires `oldgold.melt`.
+     */
+    postOldgoldMeltbatchesByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/oldgold/melt-batches/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * The old gold register
+     *
+     * Every article taken in between two dates, with the customer, identity proof, weights, purity, value and how it was settled. The Register tab chooses and orders the columns.
+     * `GET /api/oldgold/register`
+     * Requires `oldgold.view`.
+     */
+    getOldgoldRegister(query?: {
+      from: string;
+      to: string;
+      search?: string;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/oldgold/register", { query });
+    },
+    /**
+     * Payment methods offered at this branch
+     *
+     * `GET /api/pos/tenders`
+     * Requires `pos.view`.
+     */
+    getPosTenders(): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/pos/tenders");
+    },
+    /**
+     * Find a piece by tag number or HUID for the bill
+     *
+     * Exact match on the tag or HUID. Says where the piece is when it cannot be sold here.
+     * `GET /api/pos/scan/:code`
+     * Requires `pos.view`.
+     */
+    getPosScanByCode(params: { code: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/pos/scan/${encodeURIComponent(params.code)}`);
+    },
+    /**
+     * Bill the customer
+     *
+     * Prices every line on the server (rate; making and wastage from the tag, else Masters → Formulas; GST), takes the discount off making and wastage, takes the tenders and posts at once: stock out at cost, the books, and any unpaid balance on the customer. A discount above the counter limit needs `approver` (someone with discount approval) unless the biller has it. A bill of ₹2 lakh or more needs the customer’s PAN; cash reaching ₹2 lakh from one customer in a day (bills and receipts together) is refused. Without customerId it is a walk-in bill: paid in full, under ₹2 lakh, no advance.
+     * `POST /api/pos/checkout`
+     * Requires `pos.create`.
+     */
+    postPosCheckout(body: {
+      /** Leave out for a walk-in: paid in full and under ₹2 lakh. */
+      customerId?: string;
+      lines: Array<{
+        pieceId?: string;
+        itemId?: string;
+        purityId?: string;
+        locationId?: string;
+        /** Grams, as a string. */
+        grossWeight?: string;
+        /** Rupees, as a string. Never a float. */
+        hallmarkAmount?: string;
+      }>;
+      tenders: Array<{
+        paymentMethodId: string;
+        /** Rupees, as a string. Never a float. */
+        amount: string;
+        reference?: string;
+      }>;
+      /** Rupees, as a string. Never a float. */
+      discount?: string;
+      approver?: {
+        identifier: string;
+        password: string;
+      };
+      pan?: string;
+      salespersonId?: string;
+      notes?: string;
+      /** The total the counter showed; refused with price_changed if the price moved since. */
+      expectedTotal?: string;
+      /** Old gold handed over with this bill: taken in and used as payment up to what is left; any more stays as advance (not for a walk-in). */
+      oldGold?: {
+        lines: Array<{
+          description: string;
+          metalId?: string;
+          itemCategoryId?: string | null;
+          /** Grams, as a string. */
+          grossWeight: string;
+          /** Grams, as a string. */
+          stoneWeight?: string;
+          /** Grams, as a string. */
+          dirtWeight?: string;
+          testMethod: "xrf" | "touchstone" | "hallmark" | "estimate";
+          /** As tested or estimated, e.g. 91.2. For the shop’s own piece its purity is used when left out. */
+          testedPurityPercent?: string;
+          declaredPurityPercent?: string;
+          testInstrument?: string;
+          huid?: string;
+          /** Tag number or HUID of a piece this shop sold: own-jewellery terms apply. */
+          ownPiece?: string;
+          /** Used only when Old Gold settings let staff change the melting loss. */
+          lossPercent?: string;
+          notes?: string;
+        }>;
+        locationId?: string;
+        idProof?: {
+          type: "aadhaar" | "pan" | "voter_id" | "driving_licence" | "passport" | "other";
+          number: string;
+        };
+      };
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/pos/checkout", { body });
+    },
+    /**
+     * Price the bill on the counter
+     *
+     * The same pricing checkout will save — tag terms, formulas, discount on making and wastage, GST, round off — with each line’s metal, wastage and making, and where they came from. Nothing is saved.
+     * `POST /api/pos/quote`
+     * Requires `pos.create`.
+     */
+    postPosQuote(body: {
+      customerId?: string | null;
+      lines: Array<{
+        pieceId?: string;
+        itemId?: string;
+        purityId?: string;
+        locationId?: string;
+        /** Grams, as a string. */
+        grossWeight?: string;
+        /** Rupees, as a string. Never a float. */
+        hallmarkAmount?: string;
+      }>;
+      /** Rupees, as a string. Never a float. */
+      discount?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/pos/quote", { body });
+    },
+    /**
+     * Bills
+     *
+     * `GET /api/pos/invoices`
+     * Requires `pos.view`.
+     */
+    getPosInvoices(query?: {
+      search?: string;
+      status?: "posted" | "cancelled";
+      customerId?: string;
+      due?: "true" | "false";
+      from?: string;
+      to?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/pos/invoices", { query });
+    },
+    /**
+     * One bill: lines, payments and returns, ready to print
+     *
+     * `GET /api/pos/invoices/:id`
+     * Requires `pos.view`.
+     */
+    getPosInvoicesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/pos/invoices/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Cancel a bill entered by mistake
+     *
+     * Everything reverses and the pieces go back on the shelf. Not once goods came back on a return or a receipt was paid against it.
      * `POST /api/pos/invoices/:id/cancel`
      * Requires `pos.cancel`.
      */
@@ -2210,112 +2546,548 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', `/api/pos/invoices/${encodeURIComponent(params.id)}/cancel`, { body });
     },
     /**
-     * List sales invoices
+     * Take goods back from a customer
      *
-     * `GET /api/pos/invoices`
+     * Against one bill. The value comes back in proportion, first clearing anything still owed on that bill, then as a refund or a credit note for an exchange.
+     * `POST /api/pos/returns`
+     * Requires `pos.return.create`.
+     */
+    postPosReturns(body: {
+      invoiceId: string;
+      lines: Array<{
+        invoiceLineId: string;
+        /** Grams, as a string. */
+        netWeight?: string;
+      }>;
+      settlement: "refund" | "credit_note";
+      refundPaymentMethodId?: string;
+      /** Rupees, as a string. Never a float. */
+      deduction?: string;
+      locationId?: string;
+      reason?: "defect" | "size" | "dislike" | "wrong_item" | "other";
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/pos/returns", { body });
+    },
+    /**
+     * Customer returns
+     *
+     * `GET /api/pos/returns`
      * Requires `pos.view`.
      */
-    getPosInvoices(query?: {
-      status?: "draft" | "confirmed" | "posted" | "cancelled";
+    getPosReturns(query?: {
       customerId?: string;
-      branchId?: string;
-      from?: string;
-      to?: string;
+      cursor?: string;
       limit?: number;
-      offset?: number;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
+      nextCursor: unknown;
     }> {
       return request<{
       rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }>('GET', "/api/pos/invoices", { query });
+      nextCursor: unknown;
+    }>('GET', "/api/pos/returns", { query });
     },
     /**
-     * One invoice with lines and payments
+     * What a customer owes and holds
      *
-     * `GET /api/pos/invoices/:id`
+     * Owed on bills, advance and credit notes, bills with a balance, and pieces out on approval.
+     * `GET /api/pos/customers/:id/balance`
      * Requires `pos.view`.
      */
-    getPosInvoicesById(params: { id: string }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('GET', `/api/pos/invoices/${encodeURIComponent(params.id)}`);
+    getPosCustomersByIdBalance(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/pos/customers/${encodeURIComponent(params.id)}/balance`);
     },
     /**
-     * Create a purchase invoice (draft)
+     * Receive money from a customer
      *
-     * The buying side. Posting raises stock and credits the supplier.
-     * `POST /api/pos/purchases`
+     * Clears their oldest unpaid bills first; anything more is kept as advance for a later bill.
+     * `POST /api/pos/receipts`
+     * Requires `pos.create`.
+     */
+    postPosReceipts(body: {
+      customerId: string;
+      /** Rupees, as a string. Never a float. */
+      amount: string;
+      paymentMethodId: string;
+      reference?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/pos/receipts", { body });
+    },
+    /**
+     * Customer receipts
+     *
+     * `GET /api/pos/receipts`
+     * Requires `pos.view`.
+     */
+    getPosReceipts(query?: {
+      customerId?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/pos/receipts", { query });
+    },
+    /**
+     * One receipt, as it prints
+     *
+     * `GET /api/pos/receipts/:id`
+     * Requires `pos.view`.
+     */
+    getPosReceiptsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/pos/receipts/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Cancel a receipt
+     *
+     * `POST /api/pos/receipts/:id/cancel`
+     * Requires `pos.cancel`.
+     */
+    postPosReceiptsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/pos/receipts/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Approval memos
+     *
+     * `GET /api/pos/memos`
+     * Requires `pos.view`.
+     */
+    getPosMemos(query?: {
+      status?: "open" | "closed";
+      overdue?: "true" | "false";
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/pos/memos", { query });
+    },
+    /**
+     * One approval memo
+     *
+     * `GET /api/pos/memos/:id`
+     * Requires `pos.view`.
+     */
+    getPosMemosById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/pos/memos/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Send pieces to a customer on approval
+     *
+     * The pieces stay ours and show "On approval". Bill them to the same customer from the counter, or take them back.
+     * `POST /api/pos/memos`
+     * Requires `pos.create`.
+     */
+    postPosMemos(body: {
+      customerId: string;
+      pieceIds: Array<string>;
+      dueDate: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/pos/memos", { body });
+    },
+    /**
+     * Take pieces back from approval
+     *
+     * `POST /api/pos/memos/:id/return`
+     * Requires `pos.create`.
+     */
+    postPosMemosByIdReturn(params: { id: string }, body: {
+      pieceIds: Array<string>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/pos/memos/${encodeURIComponent(params.id)}/return`, { body });
+    },
+    /**
+     * Purchase orders
+     *
+     * `GET /api/purchase/orders`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseOrders(query?: {
+      supplierId?: string;
+      status?: "confirmed" | "closed" | "cancelled";
+      search?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/purchase/orders", { query });
+    },
+    /**
+     * One purchase order with its lines
+     *
+     * `GET /api/purchase/orders/:id`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseOrdersById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/purchase/orders/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Place a purchase order
+     *
+     * What was asked of the supplier. Affects nothing until goods arrive; inwards against it show what is still due.
+     * `POST /api/purchase/orders`
      * Requires `pos.purchase.create`.
      */
-    postPosPurchases(body: {
+    postPurchaseOrders(body: {
       supplierId: string;
-      branchId: string;
-      docDate: string;
-      /** Their number, needed for GST matching. */
-      supplierInvoiceNumber?: string;
-      supplierInvoiceDate?: string;
-      dueDate?: string;
-      raisesStock?: boolean;
-      /** Rupees, as a string. Never a float. */
-      otherCharges?: string;
+      docDate?: string;
+      expectedDate?: string;
       notes?: string;
       lines: Array<{
         itemId: string;
-        purityId?: string | null;
-        locationId?: string | null;
-        description?: string;
-        quantity?: string;
+        purityId: string;
+        quantity?: number;
+        /** Grams, as a string. */
+        grossWeight: string;
+        /** Rupees, as a string. Never a float. */
+        ratePerGram?: string;
+        notes?: string;
+      }>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/purchase/orders", { body });
+    },
+    /**
+     * Close or cancel an order
+     *
+     * `status: closed` when no more is coming; `cancelled` only while nothing has arrived.
+     * `POST /api/purchase/orders/:id/close`
+     * Requires `pos.purchase.create`.
+     */
+    postPurchaseOrdersByIdClose(params: { id: string }, body: {
+      reason: string;
+      status: "closed" | "cancelled";
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/purchase/orders/${encodeURIComponent(params.id)}/close`, { body });
+    },
+    /**
+     * Goods inwards and direct purchases
+     *
+     * `GET /api/purchase/inwards`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseInwards(query?: {
+      supplierId?: string;
+      status?: "posted" | "cancelled";
+      /** Inward number or the supplier’s bill number. */
+      search?: string;
+      unbilled?: "true" | "false";
+      /** true = direct purchases only; false = goods inwards only. */
+      direct?: "true" | "false";
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/purchase/inwards", { query });
+    },
+    /**
+     * One inward with its lines and tagging progress
+     *
+     * `GET /api/purchase/inwards/:id`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseInwardsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/purchase/inwards/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Receive goods (and the bill, if it came with them)
+     *
+     * Posts at once: stock goes up at the location, the supplier is owed rupees and/or fine metal, and pieces wait in Tagging as a lot. Rupee basis: metal at the rate. Fine basis: fine metal owed = net × touch %; making and stones in rupees. Send `bill` when the supplier bill came with the goods; otherwise enter it later. `direct: true` is a direct purchase: the bill is required, and goods and bill are one record — cancelled together, never separately.
+     * `POST /api/purchase/inwards`
+     * Requires `pos.purchase.create`.
+     */
+    postPurchaseInwards(body: {
+      supplierId: string;
+      docDate?: string;
+      locationId: string;
+      purchaseOrderId?: string;
+      /** The supplier’s challan number. */
+      referenceNumber?: string;
+      notes?: string;
+      lines: Array<{
+        itemId: string;
+        purityId: string;
+        pieces?: number;
         /** Grams, as a string. */
         grossWeight: string;
         /** Grams, as a string. */
         stoneWeight?: string;
+        /** Grams, as a string. */
+        otherWeight?: string;
+        /** Grams, as a string. */
+        declaredWeight?: string;
+        metalBasis: "rupee" | "fine";
+        /** Rupee basis: the agreed rate. Fine basis: the stock value per gram (defaults to today’s buying rate). */
+        ratePerGram?: string;
+        /** Fine basis: % of net weight owed back as pure metal. */
+        touchPercent?: string;
+        makingBasis?: "per_gram" | "flat" | "percent";
         /** Rupees, as a string. Never a float. */
-        ratePerGram: string;
-        makingBasis?: "per_gram" | "percent" | "flat";
         makingRate?: string;
-        wastagePercent?: string;
         /** Rupees, as a string. Never a float. */
         stoneAmount?: string;
-        /** Rupees, as a string. Never a float. */
-        discountAmount?: string;
-        gstRate?: string;
-        notes?: string;
+        purchaseOrderLineId?: string;
       }>;
+      bill?: {
+        /** Blank when the seller gave no numbered bill: our purchase number is used. */
+        supplierInvoiceNumber?: string;
+        supplierInvoiceDate: string;
+        dueDate?: string;
+        /** Rupees, as a string. Never a float. */
+        gstAmount?: string;
+      };
+      direct?: boolean;
     }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/pos/purchases", { body });
+      return request<Record<string, unknown>>('POST', "/api/purchase/inwards", { body });
     },
     /**
-     * Post a purchase — stock in, supplier credited
+     * Cancel an inward or a direct purchase entered by mistake
      *
-     * `POST /api/pos/purchases/:id/post`
+     * Only while nothing from it is tagged, returned or already sold. An inward must not be billed; a direct purchase cancels its bill with it.
+     * `POST /api/purchase/inwards/:id/cancel`
      * Requires `pos.purchase.post`.
      */
-    postPosPurchasesByIdPost(params: { id: string }): Promise<{
-      invoice: Record<string, unknown>;
-      voucherId: string;
-      voucherNumber: string;
-    }> {
-      return request<{
-      invoice: Record<string, unknown>;
-      voucherId: string;
-      voucherNumber: string;
-    }>('POST', `/api/pos/purchases/${encodeURIComponent(params.id)}/post`);
-    },
-    /**
-     * Cancel a purchase invoice
-     *
-     * `POST /api/pos/purchases/:id/cancel`
-     * Requires `pos.purchase.cancel`.
-     */
-    postPosPurchasesByIdCancel(params: { id: string }, body: {
+    postPurchaseInwardsByIdCancel(params: { id: string }, body: {
       reason: string;
     }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', `/api/pos/purchases/${encodeURIComponent(params.id)}/cancel`, { body });
+      return request<Record<string, unknown>>('POST', `/api/purchase/inwards/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Close a purchase lot in Tagging
+     *
+     * Whatever was not tagged (a weighing difference, a missing piece) leaves stock on one tagging-difference adjustment.
+     * `POST /api/purchase/lots/:id/close`
+     * Requires `stock.adjustment.post`.
+     */
+    postPurchaseLotsByIdClose(params: { id: string }, body: {
+      note: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/purchase/lots/${encodeURIComponent(params.id)}/close`, { body });
+    },
+    /**
+     * Purchase lots waiting in Tagging
+     *
+     * `GET /api/purchase/lots`
+     * Requires `tagging.view`.
+     */
+    getPurchaseLots(): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/purchase/lots");
+    },
+    /**
+     * Supplier bills
+     *
+     * `GET /api/purchase/bills`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseBills(query?: {
+      supplierId?: string;
+      status?: "posted" | "cancelled";
+      search?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/purchase/bills", { query });
+    },
+    /**
+     * Enter a supplier bill for received goods
+     *
+     * Covers one or more unbilled inwards of the supplier. GST is worked out from each line’s HSN; send `gstAmount` to match the printed bill exactly.
+     * `POST /api/purchase/bills`
+     * Requires `pos.purchase.post`.
+     */
+    postPurchaseBills(body: {
+      /** Blank when the seller gave no numbered bill: our purchase number is used. */
+      supplierInvoiceNumber?: string;
+      supplierInvoiceDate: string;
+      dueDate?: string;
+      /** Rupees, as a string. Never a float. */
+      gstAmount?: string;
+      supplierId: string;
+      inwardIds: Array<string>;
+      docDate?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/purchase/bills", { body });
+    },
+    /**
+     * Cancel a supplier bill
+     *
+     * The GST entry reverses and its inwards become unbilled again.
+     * `POST /api/purchase/bills/:id/cancel`
+     * Requires `pos.purchase.post`.
+     */
+    postPurchaseBillsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/purchase/bills/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Returns to suppliers
+     *
+     * `GET /api/purchase/returns`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseReturns(query?: {
+      supplierId?: string;
+      search?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/purchase/returns", { query });
+    },
+    /**
+     * Send goods back to the supplier
+     *
+     * Against one inward: tagged pieces (scanned), untagged pieces still in Tagging, or lot weight. The supplier’s rupees, fine metal and (if billed) GST come down in proportion.
+     * `POST /api/purchase/returns`
+     * Requires `pos.purchase.create`.
+     */
+    postPurchaseReturns(body: {
+      goodsReceiptId: string;
+      reason?: "quality" | "wrong_item" | "excess" | "damaged" | "other";
+      notes?: string;
+      docDate?: string;
+      /** Tagged pieces as scanned; each is matched to its inward line. */
+      pieceIds?: Array<string>;
+      lines?: Array<{
+        goodsReceiptLineId: string;
+        pieces?: number;
+        /** Grams, as a string. */
+        grossWeight?: string;
+        /** Grams, as a string. */
+        netWeight?: string;
+      }>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/purchase/returns", { body });
+    },
+    /**
+     * What a supplier is owed
+     *
+     * Rupees on Sundry Creditors, fine metal per metal (with its average carrying rate), and unbilled inwards.
+     * `GET /api/purchase/suppliers/:id/balance`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseSuppliersByIdBalance(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/purchase/suppliers/${encodeURIComponent(params.id)}/balance`);
+    },
+    /**
+     * Every supplier we owe
+     *
+     * Rupees and fine metal per supplier, largest first.
+     * `GET /api/purchase/payables`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchasePayables(): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/purchase/payables");
+    },
+    /**
+     * Supplier payments
+     *
+     * `GET /api/purchase/settlements`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseSettlements(query?: {
+      supplierId?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/purchase/settlements", { query });
+    },
+    /**
+     * One supplier payment, as it prints
+     *
+     * `GET /api/purchase/settlements/:id`
+     * Requires `pos.purchase.view`.
+     */
+    getPurchaseSettlementsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/purchase/settlements/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Pay a supplier in rupees or metal
+     *
+     * `payment`: rupees by a payment method from Masters. `metal`: fine metal given from a lot in stock (item, purity, location, net weight). `rate_fix`: fine metal owed converted to rupees at an agreed rate per fine gram. Metal cannot exceed what is owed. The difference between the carrying value and the settlement is booked as metal gain or loss.
+     * `POST /api/purchase/settlements`
+     * Requires `pos.purchase.post`.
+     */
+    postPurchaseSettlements(body: {
+      supplierId: string;
+      kind: "payment" | "metal" | "rate_fix";
+      docDate?: string;
+      /** Rupees, as a string. Never a float. */
+      amount?: string;
+      paymentMethodId?: string;
+      reference?: string;
+      itemId?: string;
+      purityId?: string;
+      locationId?: string;
+      /** Grams, as a string. */
+      netWeight?: string;
+      metalId?: string;
+      /** Grams, as a string. */
+      fineWeight?: string;
+      /** Rupees, as a string. Never a float. */
+      ratePerGram?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/purchase/settlements", { body });
+    },
+    /**
+     * Cancel a supplier payment
+     *
+     * `POST /api/purchase/settlements/:id/cancel`
+     * Requires `pos.purchase.post`.
+     */
+    postPurchaseSettlementsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/purchase/settlements/${encodeURIComponent(params.id)}/cancel`, { body });
     },
     /**
      * Stock totals for the header cards
@@ -2397,6 +3169,20 @@ export function createClient(options: ClientOptions) {
       note: string;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', `/api/stock/pieces/${encodeURIComponent(params.id)}/weights`, { body });
+    },
+    /**
+     * Change the making and wastage on a tag
+     *
+     * A repricing, or a mistake at tagging. Send nulls to hand the piece back to Masters → Formulas.
+     * `POST /api/stock/pieces/:id/pricing`
+     * Requires `tagging.create`.
+     */
+    postStockPiecesByIdPricing(params: { id: string }, body: {
+      makingBasis: "per_gram" | "flat" | "percent" | null;
+      makingRate: string | null;
+      wastagePercent: string | null;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/stock/pieces/${encodeURIComponent(params.id)}/pricing`, { body });
     },
     /**
      * Stock by item, purity and location
@@ -2740,6 +3526,14 @@ export function createClient(options: ClientOptions) {
         supplierId?: string;
         /** Leave out to take the next tag number. */
         tagNumber?: string;
+        /** How the tag’s making is charged. With makingRate it wins over Masters → Formulas. */
+        makingBasis?: "per_gram" | "flat" | "percent";
+        /** ₹/g, ₹/piece, or % of metal value. */
+        makingRate?: string;
+        /** % of net weight charged as extra metal. Blank uses the formula. */
+        wastagePercent?: string;
+        /** A purchase lot waiting in Tagging: the piece takes its location, supplier and a share of its cost. */
+        taggingLotId?: string;
       }>;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
@@ -2853,176 +3647,6 @@ export function createClient(options: ClientOptions) {
      */
     deleteTaggingTemplatesById(params: { id: string }): Promise<void> {
       return request<void>('DELETE', `/api/tagging/templates/${encodeURIComponent(params.id)}`);
-    },
-    /**
-     * Create an old-gold appraisal voucher
-     *
-     * Records what the customer brought in, item by item, with XRF readings and the deductions that turn gross weight into actual metal. Fine weight and value are computed server-side from the buying rate.
-     * `POST /api/oldgold/intakes`
-     * Requires `oldgold.create`.
-     */
-    postOldgoldIntakes(body: {
-      customerId: string;
-      branchId: string;
-      voucherDate: string;
-      /** Can be decided later, at settlement. */
-      settlementType?: "exchange" | "buyback";
-      /** The buying rate applied to this voucher. */
-      ratePerGram: string;
-      /** Handling or refining charge withheld. */
-      deductionAmount?: string;
-      notes?: string;
-      items: Array<{
-        description: string;
-        metalId: string;
-        itemCategoryId?: string | null;
-        /** Grams, as a string. */
-        grossWeight: string;
-        /** Grams, as a string. */
-        stoneWeight?: string;
-        /** Grams, as a string. */
-        dirtWeight?: string;
-        /** Grams, as a string. */
-        solderWeight?: string;
-        testMethod?: "xrf" | "touchstone" | "fire_assay" | "declared" | "visual";
-        /** What the machine read, as a percentage. */
-        testedPurityPercent: string;
-        /** What the customer said it was. */
-        declaredPurityPercent?: string;
-        testInstrument?: string;
-        photoStorageKey?: string;
-        notes?: string;
-      }>;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/oldgold/intakes", { body });
-    },
-    /**
-     * List appraisal vouchers
-     *
-     * `GET /api/oldgold/intakes`
-     * Requires `oldgold.view`.
-     */
-    getOldgoldIntakes(query?: {
-      status?: "draft" | "tested" | "approved" | "settled" | "returned" | "cancelled";
-      settlementType?: "exchange" | "buyback";
-      customerId?: string;
-      branchId?: string;
-      from?: string;
-      to?: string;
-      limit?: number;
-      offset?: number;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }>('GET', "/api/oldgold/intakes", { query });
-    },
-    /**
-     * Settle a voucher — exchange credit or cash buyback
-     *
-     * The branch point. `exchange` links the credit to an invoice or order; `buyback` records a cash payout. Same intake, opposite accounting.
-     * `POST /api/oldgold/intakes/:id/settle`
-     * Requires `oldgold.update`.
-     */
-    postOldgoldIntakesByIdSettle(params: { id: string }, body: {
-      settlementType: "exchange" | "buyback";
-      /** For exchange. */
-      appliedToInvoiceId?: string;
-      /** For exchange. */
-      appliedToOrderId?: string;
-      /** For buyback. */
-      payoutMode?: "cash" | "bank_transfer" | "upi" | "cheque";
-      payoutReference?: string;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', `/api/oldgold/intakes/${encodeURIComponent(params.id)}/settle`, { body });
-    },
-    /**
-     * List melt batchs
-     *
-     * Paginated. `total` is the count before paging, for the pager.
-     * `GET /api/oldgold/melt-batches`
-     * Requires `oldgold.melt.view`.
-     */
-    getOldgoldMeltbatches(query?: {
-      /** Matches batch_number. */
-      search?: string;
-      status?: "open" | "sent" | "melted" | "received" | "closed";
-      /** From the previous page's nextCursor (large lists only). */
-      cursor?: string;
-      limit?: number;
-      offset?: number;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }>('GET', "/api/oldgold/melt-batches", { query });
-    },
-    /**
-     * Get one melt batch
-     *
-     * `GET /api/oldgold/melt-batches/:id`
-     * Requires `oldgold.melt.view`.
-     */
-    getOldgoldMeltbatchesById(params: { id: string }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('GET', `/api/oldgold/melt-batches/${encodeURIComponent(params.id)}`);
-    },
-    /**
-     * Create a melt batch
-     *
-     * `POST /api/oldgold/melt-batches`
-     * Requires `oldgold.melt.create`.
-     */
-    postOldgoldMeltbatches(body: {
-      batch_number: string;
-      batch_date: string;
-      branch_id: string;
-      metal_id: string;
-      refiner_id?: string;
-      notes?: string;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/oldgold/melt-batches", { body });
-    },
-    /**
-     * Update a melt batch
-     *
-     * Only the fields you send are changed.
-     * `PATCH /api/oldgold/melt-batches/:id`
-     * Requires `oldgold.melt.update`.
-     */
-    patchOldgoldMeltbatchesById(params: { id: string }, body: {
-      status?: "open" | "sent" | "melted" | "received" | "closed";
-      /** Grams, as a string. */
-      output_weight?: string;
-      output_purity_percent?: string;
-      /** Rupees, as a string. Never a float. */
-      refining_charge?: string;
-      assay_certificate_number?: string;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('PATCH', `/api/oldgold/melt-batches/${encodeURIComponent(params.id)}`, { body });
-    },
-    /**
-     * Remove a melt batch
-     *
-     * Hard delete. Fails if anything references it.
-     * `DELETE /api/oldgold/melt-batches/:id`
-     * Requires `oldgold.melt.delete`.
-     */
-    deleteOldgoldMeltbatchesById(params: { id: string }): Promise<void> {
-      return request<void>('DELETE', `/api/oldgold/melt-batches/${encodeURIComponent(params.id)}`);
     },
     /**
      * List scheme plans
@@ -3568,7 +4192,7 @@ export function createClient(options: ClientOptions) {
         hallmarkAmount?: string;
         discount?: {
           amount: string;
-          on: "making" | "total";
+          on: "making" | "charges" | "total";
         } | null;
         override?: {
           ratePerGram?: string;

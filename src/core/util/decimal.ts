@@ -57,6 +57,12 @@ export function round(value: Decimal, decimals = 2): Decimal {
   return fromUnits(negative ? -rounded : rounded);
 }
 
+/** For messages: rounded half-up and always showing `decimals` places, as 70.500 g or 6,800.00. */
+export function fixed(value: Decimal, decimals: number): string {
+  const [whole, fraction = ''] = round(value, decimals).split('.');
+  return decimals ? `${whole}.${fraction.padEnd(decimals, '0')}` : whole!;
+}
+
 /** 22K at 91.6% fineness on 10g = 9.16g of pure gold. */
 export const fineWeight = (grossWeight: Decimal, purityPercent: Decimal): Decimal =>
   div(mul(grossWeight, purityPercent), '100');

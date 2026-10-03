@@ -143,9 +143,6 @@ export const itemTable = defineTable({
     metal_id: col.fk('metal'),
     default_purity_id: col.fk('purity'),
     hsn_code: col.text(),
-    /** Defaults that a document line starts from and may override. */
-    default_making_rate: col.rate(),
-    default_wastage_percent: col.rate(),
     /** For stones and consumables that are counted, not weighed. */
     uom: col.enum(['gram', 'piece', 'carat', 'millilitre'], { notNull: true, default: "'gram'" }),
     is_active: col.bool({ notNull: true, default: 'true' }),

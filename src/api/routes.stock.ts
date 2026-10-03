@@ -18,10 +18,10 @@ import { rebuildBalances, recordMovements } from '../modules/inventory/stock.ser
 import { adjustStock, MANUAL_REASONS } from '../modules/inventory/adjustment.service.js';
 import { cancelTransfer, dispatchTransfer, receiveTransfer } from '../modules/inventory/transfer.service.js';
 import { cancelCount, countResult, postCount, removeCountLine, scanTags, startCount, weighLot } from '../modules/inventory/count.service.js';
-import { assignHuid, correctPieceWeights, preparePieces, tagAll, tagPieces, type TagPieceInput } from '../modules/tagging/tagging.service.js';
-import { PIECE_STATUSES } from '../modules/inventory/inventory.schema.js';
+import { assignHuid, correctPieceWeights, preparePieces, setPiecePricing, tagAll, tagPieces, type TagMakingBasis, type TagPieceInput } from '../modules/tagging/tagging.service.js';
+import { PIECE_STATUSES, TAG_MAKING_BASES } from '../modules/inventory/inventory.schema.js';
 import { defineCrud, decodeCursor, encodeCursor } from './crud.js';
-import { errorEnvelope, idParam, record, uuid, weight, money, boolParam } from './schemas.js';
+import { errorEnvelope, idParam, record, uuid, weight, money, decimal, boolParam } from './schemas.js';
 
 const DAY = '2026-09-29';
 const added = (note: string) => [{ date: DAY, kind: 'added' as const, note }];
@@ -80,9 +80,9 @@ defineRoute({
 
 const pieceSelect = `
   select p.id, p.tag_number, p.status, p.huid, p.gross_weight, p.stone_weight, p.other_weight, p.net_weight, p.fine_weight,
-         p.stone_count, p.cost_value, p.received_at, p.label_printed_at, p.label_print_count,
+         p.stone_count, p.stone_cost, p.cost_value, p.making_basis, p.making_rate, p.wastage_percent, p.received_at, p.label_printed_at, p.label_print_count,
          p.item_id, i.code as item_code, i.name as item_name, c.name as category_name,
-         p.purity_id, pu.code as purity_code, p.location_id, l.name as location_name, l.branch_id, b.name as branch_name,
+         p.purity_id, pu.code as purity_code, pu.metal_id, p.location_id, l.name as location_name, l.branch_id, b.name as branch_name,
          (current_date - p.received_at::date) as days_in_stock
     from stock_piece p join item i on i.id = p.item_id left join item_category c on c.id = i.category_id
     left join purity pu on pu.id = p.purity_id join stock_location l on l.id = p.location_id join branch b on b.id = l.branch_id`;
@@ -154,6 +154,17 @@ defineRoute({
   responses: [{ status: 200, description: 'Updated piece.', schema: record }, { status: 422, description: 'Not in stock or weights do not add up.', schema: errorEnvelope }],
   changelog: added('Re-weigh a piece.'),
   handler: async (req) => transaction((tx) => correctPieceWeights(tx, param(req, 'id'), req.body)),
+});
+
+defineRoute({
+  method: 'post', path: '/api/stock/pieces/:id/pricing', module: 'stock',
+  summary: 'Change the making and wastage on a tag',
+  description: 'A repricing, or a mistake at tagging. Send nulls to hand the piece back to Masters → Formulas.',
+  permission: 'tagging.create', params: idParam,
+  body: z.object({ makingBasis: z.enum(TAG_MAKING_BASES).nullable(), makingRate: decimal.nullable(), wastagePercent: decimal.nullable() }),
+  responses: [{ status: 200, description: 'Updated piece.', schema: record }, { status: 422, description: 'Not in stock, or making/wastage out of range.', schema: errorEnvelope }],
+  changelog: [{ date: '2026-09-30', kind: 'added', note: 'Making and wastage on the tag.' }],
+  handler: async (req) => transaction((tx) => setPiecePricing(tx, param(req, 'id'), req.body)),
 });
 
 /* ---------------------------------------------------- lots & journal */
@@ -234,6 +245,7 @@ const IMPORTS = {
     stone_weight: cell(weight.optional()), other_weight: cell(weight.optional()),
     stone_count: cell(z.coerce.number().int().min(0).optional()), huid: text, hallmark_centre: text,
     tag_number: text, cost_value: cell(money.optional()),
+    making_basis: cell(z.enum(TAG_MAKING_BASES).optional()), making_rate: cell(decimal.optional()), wastage_percent: cell(decimal.optional()),
   }),
   lots: z.object({
     item_code: cell(z.string()), purity: cell(z.string()), net_weight: cell(weight),
@@ -289,6 +301,8 @@ defineRoute({
         stoneCount: data.stone_count as number | undefined, huid: data.huid as string | undefined,
         hallmarkCentre: data.hallmark_centre as string | undefined, tagNumber: data.tag_number as string | undefined,
         costValue: data.cost_value as string | undefined,
+        makingBasis: data.making_basis as TagMakingBasis | undefined, makingRate: data.making_rate as string | undefined,
+        wastagePercent: data.wastage_percent as string | undefined,
       }));
       const { ready, errors } = await preparePieces(tx, inputs, (i) => `row ${parsed[i]!.row}`);
       errors.forEach((e) => failed.push({ row: parsed[e.index]!.row, message: e.message }));
@@ -524,6 +538,10 @@ const pieceInput = z.object({
   huid: z.string().trim().optional(), hallmarkCentre: z.string().trim().optional(),
   costValue: money.optional(), makingCost: money.optional(), supplierId: uuid.optional(),
   tagNumber: z.string().trim().max(40).optional().describe('Leave out to take the next tag number.'),
+  makingBasis: z.enum(TAG_MAKING_BASES).optional().describe('How the tag’s making is charged. With makingRate it wins over Masters → Formulas.'),
+  makingRate: decimal.optional().describe('₹/g, ₹/piece, or % of metal value.'),
+  wastagePercent: decimal.optional().describe('% of net weight charged as extra metal. Blank uses the formula.'),
+  taggingLotId: uuid.optional().describe('A purchase lot waiting in Tagging: the piece takes its location, supplier and a share of its cost.'),
 });
 
 defineRoute({

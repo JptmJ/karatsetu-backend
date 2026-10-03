@@ -77,7 +77,6 @@ const KINDS: Record<string, ImportKind> = {
       nature: z.enum(['raw_metal', 'finished', 'stone', 'consumable', 'service']).optional(),
       tracking: z.enum(['lot', 'piece']).optional(),
       uom: z.enum(['gram', 'piece', 'carat', 'millilitre']).optional(),
-      default_making_rate: num(decimal).optional(), default_wastage_percent: num(decimal).optional(),
     }),
     prepare: (row, lk) => {
       const { category_code, metal_code, purity_code, ...rest } = row as Row & Record<'category_code' | 'metal_code' | 'purity_code', string | undefined>;

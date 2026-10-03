@@ -22,6 +22,8 @@ export interface ConfigDefinition<T = unknown> {
   scope: ConfigScope;
   /** Changing this rewrites how past numbers are interpreted — warn loudly. */
   sensitive?: boolean;
+  /** Never listed or changed through the settings screen (a password hash); it has its own route. */
+  secret?: boolean;
 }
 
 const definitions = new Map<string, ConfigDefinition>();
@@ -137,6 +139,47 @@ export const CONFIG = {
     scope: 'tenant',
   }),
 
+  /* --- counter pricing: read by the shared engine (Masters → Formulas → Calculation Settings) --- */
+  metalValueBasis: defineConfig({
+    key: 'pricing.metal_value_basis',
+    group: 'pricing',
+    label: 'Metal value is worked out on',
+    description:
+      'net = net weight × the purity’s rate (e.g. 22K rate); fine = fine weight × the pure 24K/999 rate; gross = gross weight × the purity’s rate. Wastage % is taken of the same weight.',
+    schema: z.enum(['net', 'fine', 'gross']),
+    default: 'net' as const,
+    scope: 'tenant',
+    sensitive: true,
+  }),
+  makingWeightBasis: defineConfig({
+    key: 'pricing.making_weight_basis',
+    group: 'pricing',
+    label: 'Making per gram is charged on',
+    description: 'net = metal weight only; gross = including stones and other weight.',
+    schema: z.enum(['net', 'gross']),
+    default: 'net' as const,
+    scope: 'tenant',
+  }),
+  makingGstTreatment: defineConfig({
+    key: 'pricing.making_gst_treatment',
+    group: 'pricing',
+    label: 'GST on making',
+    description: 'composite = the jewellery rate (3%) on the whole value; separate = making taxed as a service under its own SAC.',
+    schema: z.enum(['composite', 'separate']),
+    default: 'composite' as const,
+    scope: 'tenant',
+    sensitive: true,
+  }),
+  separateMakingSac: defineConfig({
+    key: 'pricing.separate_making_sac',
+    group: 'pricing',
+    label: 'SAC for making billed separately',
+    description: 'Its rate comes from Masters → HSN & GST.',
+    schema: z.string().regex(/^\d{4,8}$/),
+    default: '9988',
+    scope: 'tenant',
+  }),
+
   /* --- tax (Module 12.1) --- */
   gstEnabled: defineConfig({
     key: 'tax.gst.enabled',
@@ -187,6 +230,94 @@ export const CONFIG = {
     default: false,
     scope: 'tenant',
   }),
+  discountFreePercent: defineConfig({
+    key: 'pos.discount_free_percent',
+    group: 'pos',
+    label: 'Discount the counter can give without approval',
+    description: 'As a percentage of the making and wastage on the bill. Above it, a person with discount approval must approve.',
+    schema: z.coerce.number().min(0).max(100),
+    default: 10,
+    scope: 'branch',
+  }),
+
+  /* --- old gold (Old Gold → Settings) --- */
+  oldGoldValuation: defineConfig({
+    key: 'oldgold.valuation_basis', group: 'oldgold', label: 'Old gold is valued on',
+    description: 'fine = fine weight × the pure (24K/999) rate; purity = net weight × the rate of the nearest purity at or below the tested one.',
+    schema: z.enum(['fine', 'purity']), default: 'fine' as const, scope: 'tenant', sensitive: true,
+  }),
+  oldGoldRateSource: defineConfig({
+    key: 'oldgold.rate_source', group: 'oldgold', label: 'Rate used for old gold',
+    description: 'buying = the buying rate from Masters → Rates; selling = the selling rate.',
+    schema: z.enum(['buying', 'selling']), default: 'buying' as const, scope: 'tenant',
+  }),
+  oldGoldRateMargin: defineConfig({
+    key: 'oldgold.rate_margin_percent', group: 'oldgold', label: 'Take this % off the rate',
+    description: 'For shops that value old gold a set % below the chosen rate. 0 = the rate as it is.',
+    schema: z.coerce.number().min(0).max(50), default: 0, scope: 'tenant',
+  }),
+  oldGoldLoss: defineConfig({
+    key: 'oldgold.melting_loss_percent', group: 'oldgold', label: 'Melting loss deducted (%)',
+    description: 'Taken off the fine metal of every article, before valuing it.',
+    schema: z.coerce.number().min(0).max(50), default: 0, scope: 'tenant',
+  }),
+  oldGoldLossEditable: defineConfig({
+    key: 'oldgold.loss_editable', group: 'oldgold', label: 'Staff can change the melting loss on an article',
+    description: 'Off = every article uses the loss above.', schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  oldGoldAllowEstimate: defineConfig({
+    key: 'oldgold.allow_estimate', group: 'oldgold', label: 'Allow an estimated purity (no test)',
+    description: 'Off = every article needs XRF, touchstone or a hallmark.', schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  oldGoldBuyback: defineConfig({
+    key: 'oldgold.buyback_enabled', group: 'oldgold', label: 'Buy old gold for money (buyback)',
+    description: 'Off = old gold is only taken in exchange or as advance.', schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  oldGoldCashLimit: defineConfig({
+    key: 'oldgold.cash_payout_limit', group: 'oldgold', label: 'Most cash paid out to one person in a day (₹)',
+    description: 'Above it, pay by bank or UPI. 0 = never pay old gold in cash. (Cash over ₹10,000 a day is not an allowed expense, s.40A(3).)',
+    schema: z.coerce.number().min(0), default: 10000, scope: 'tenant',
+  }),
+  oldGoldOwnEnabled: defineConfig({
+    key: 'oldgold.own.enabled', group: 'oldgold', label: 'Special terms for jewellery this shop sold',
+    description: 'On = a piece found by its tag or HUID as sold by this shop gets the loss and rate below.', schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  oldGoldOwnLoss: defineConfig({
+    key: 'oldgold.own.loss_percent', group: 'oldgold', label: 'Melting loss on own jewellery (%)',
+    description: 'Usually lower than on outside gold.', schema: z.coerce.number().min(0).max(50), default: 0, scope: 'tenant',
+  }),
+  oldGoldOwnRate: defineConfig({
+    key: 'oldgold.own.rate_source', group: 'oldgold', label: 'Rate used for own jewellery',
+    description: 'buying or selling rate from Masters → Rates.', schema: z.enum(['buying', 'selling']), default: 'selling' as const, scope: 'tenant',
+  }),
+  oldGoldKyc: defineConfig({
+    key: 'oldgold.kyc_required', group: 'oldgold', label: 'Take proof of identity',
+    description: 'never, only when buying for money, or on every intake.', schema: z.enum(['never', 'buyback', 'always']), default: 'buyback' as const, scope: 'tenant',
+  }),
+  oldGoldKycMin: defineConfig({
+    key: 'oldgold.kyc_min_value', group: 'oldgold', label: 'Identity needed from this value (₹)',
+    description: '0 = whenever the rule above applies.', schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  oldGoldHoldDays: defineConfig({
+    key: 'oldgold.hold_days', group: 'oldgold', label: 'Days to hold old gold before melting',
+    description: 'Some states ask second-hand gold to be kept unmelted for a period. 0 = melt any time.',
+    schema: z.coerce.number().int().min(0).max(365), default: 0, scope: 'tenant',
+  }),
+  oldGoldRegisterColumns: defineConfig({
+    key: 'oldgold.register_columns', group: 'oldgold', label: 'Columns in the old gold register',
+    description: 'Chosen on the Register tab; printed in this order.',
+    schema: z.array(z.string()).max(30),
+    default: ['date', 'voucher', 'customer', 'phone', 'address', 'id_proof', 'description', 'gross', 'net', 'purity', 'test', 'fine', 'value', 'settlement'],
+    scope: 'tenant',
+  }),
+  privateScreenPassword: defineConfig({
+    key: 'security.private_screen_password', group: 'security', label: 'Private screen password',
+    description: 'scrypt hash (salt:hash) of the password that opens the private screen. Seeded as Ratna@2026; changed through POST /api/private-screen/password.',
+    schema: z.string().regex(/^[0-9a-f]{32}:[0-9a-f]{128}$/),
+    default: '80e6f4873cd7f42cc7f7e9cca4aa9bde:4a156cbd3dfb4488e1c7c8f87480982d9b3033762e413df6ef2ffec93504271854e5a991d153182b5cef2f4f909057f7291fe88ec4b60981eb3fad2b63c972e8',
+    scope: 'tenant', secret: true,
+  }),
+
   negativeStock: defineConfig({
     key: 'inventory.allow_negative_stock',
     group: 'inventory',
