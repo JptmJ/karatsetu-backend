@@ -77,6 +77,31 @@ describe('priceLine', () => {
     expect(r.gstAmount).toBe('1965.75');
   });
 
+  it('values metal on fine weight at the pure rate, with wastage % of the fine weight', () => {
+    const r = priceLine({ ...ring, ratePerGram: '7000', metalOn: 'fine', wastage: { id: 'w', basis: 'percent', rate: '5' } });
+    expect(r.metalOn).toBe('fine');
+    expect(r.metalWeightG).toBe('8.702');      // 9.5 g net × 91.6%
+    expect(r.metalAmount).toBe('60914.00');    // 8.702 × 7,000
+    expect(r.wastageWeightG).toBe('0.435');    // 5% of 8.702 g
+    expect(r.makingAmount).toBe('4275.00');    // making stays on net unless told otherwise
+  });
+
+  it('values metal on gross weight when the shop sells that way', () => {
+    const r = priceLine({ ...ring, metalOn: 'gross' });
+    expect(r.metalWeightG).toBe('10.000');
+    expect(r.metalAmount).toBe('65000.00');
+  });
+
+  it('a counter discount comes off making and wastage in proportion, never the metal', () => {
+    const r = priceLine({ ...ring, wastage: { id: 'w', basis: 'percent', rate: '5' }, discount: { amount: '736.25', on: 'charges' } });
+    const part = (c: string) => r.taxBreakup.find((b) => b.component === c)!.taxable;
+    expect(part('making')).toBe('3847.50');   // 4,275.00 − 427.50
+    expect(part('wastage')).toBe('2778.75');  // 3,087.50 − 308.75
+    expect(part('metal')).toBe('61750.00');
+    expect(() => priceLine({ ...ring, wastage: { id: 'w', basis: 'percent', rate: '5' }, discount: { amount: '7400', on: 'charges' } }))
+      .toThrow(/more than making and wastage ₹7362.50/);
+  });
+
   it('a whole-line discount is shared across components, to the paisa', () => {
     const r = priceLine({ ...ring, discount: { amount: '1000', on: 'total' } });
     expect(r.taxableAmount).toBe('65025.00');

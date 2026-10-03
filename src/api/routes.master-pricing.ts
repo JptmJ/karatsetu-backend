@@ -93,7 +93,7 @@ const slab = z.object({ fromG: decimal, toG: decimal.nullable(), rate: decimal }
 const ruleFields = z.object({
   code: z.string().min(1).max(30),
   name: z.string().min(1).max(120),
-  applies_to: z.enum(['making', 'wastage', 'stone', 'hallmark', 'discount']),
+  applies_to: z.enum(['making', 'wastage', 'hallmark']).describe('Stones are priced from the value on each tag; discounts are given on the bill, on making and wastage.'),
   basis: z.enum(['per_gram', 'percent', 'flat', 'slab', 'hybrid']),
   rate: decimal.nullish(),
   flat_amount: decimal.nullish(),

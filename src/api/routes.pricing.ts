@@ -3,7 +3,7 @@ import { Decimal } from 'decimal.js';
 import { defineRoute } from '../core/http/route-registry.js';
 import { transaction } from '../core/db/client.js';
 import { decimal, errorEnvelope, record, uuid } from './schemas.js';
-import { priceRequest, type PricedLine } from '../modules/masters/pricing/pricing.service.js';
+import { priceLines } from '../modules/masters/pricing/pricing.service.js';
 
 const rule = z.object({
   id: z.null().default(null),
@@ -20,7 +20,7 @@ const line = z.object({
   quantity: z.number().int().min(1).default(1),
   grossWeightG: decimal, stoneWeightG: decimal.optional(), otherWeightG: decimal.optional(),
   stoneAmount: decimal.optional(), hallmarkAmount: decimal.optional(),
-  discount: z.object({ amount: decimal, on: z.enum(['making', 'total']) }).nullish(),
+  discount: z.object({ amount: decimal, on: z.enum(['making', 'charges', 'total']) }).nullish(),
   override: z.object({ ratePerGram: decimal.optional(), making: rule.optional() }).optional(),
 });
 
@@ -36,10 +36,7 @@ defineRoute({
   ],
   changelog: [{ date: '2026-09-27', kind: 'added', note: 'Pricing preview backed by the shared pricing engine.' }],
   handler: async (req) => transaction(async (tx) => {
-    const lines: PricedLine[] = [];
-    for (const l of req.body.lines) {
-      lines.push(await priceRequest(tx, { ...l, customerStateCode: req.body.customerStateCode ?? null }));
-    }
+    const lines = await priceLines(tx, req.body.lines.map((l: object) => ({ ...l, customerStateCode: req.body.customerStateCode ?? null })));
     const add = (k: 'taxableAmount' | 'gstAmount' | 'lineTotal') =>
       lines.reduce((acc, l) => acc.plus(l[k]), new Decimal(0));
     const total = add('lineTotal');

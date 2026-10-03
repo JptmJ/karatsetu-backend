@@ -26,7 +26,7 @@ export interface MovementInput {
   reason:
     | 'opening' | 'purchase' | 'purchase_return' | 'sale' | 'sales_return'
     | 'transfer_out' | 'transfer_in' | 'production_issue' | 'production_receipt'
-    | 'old_gold_intake' | 'melting' | 'adjustment' | 'memo_out' | 'memo_in';
+    | 'old_gold_intake' | 'melting' | 'refining' | 'adjustment' | 'memo_out' | 'memo_in' | 'metal_payment';
   itemId: string;
   /**
    * How this item is counted. `lot` items (bulk metal, findings) are measured
@@ -166,8 +166,12 @@ export async function recordMovements(
   return rows.map((m) => m.id);
 }
 
-/** Undoes every movement a document made, by writing their mirror images. */
-export async function reverseMovementsFor(tx: Tx, sourceType: string, sourceId: string, note: string): Promise<void> {
+/**
+ * Undoes every movement a document made, by writing their mirror images.
+ * `strict` refuses when the goods are no longer there (cancelling a purchase
+ * whose stock was already sold); otherwise a reversal always goes through.
+ */
+export async function reverseMovementsFor(tx: Tx, sourceType: string, sourceId: string, note: string, strict = false): Promise<void> {
   const originals = await tx.query<{
     id: string; direction: MovementDirection; reason: MovementInput['reason']; tracking: 'lot' | 'piece';
     item_id: string; purity_id: string | null; location_id: string; piece_id: string | null;
@@ -182,15 +186,15 @@ export async function reverseMovementsFor(tx: Tx, sourceType: string, sourceId: 
     [sourceType, sourceId],
   );
 
-  // A reversal must always go through, even into negative stock — refusing it
-  // would leave the books in a worse state than the mistake.
+  // A correcting reversal must go through, even into negative stock — refusing
+  // it would leave the books in a worse state than the mistake.
   await recordMovements(tx, originals.map((o) => ({
     direction: o.direction === 'in' ? 'out' as const : 'in' as const,
     reason: o.reason, tracking: o.tracking, itemId: o.item_id, purityId: o.purity_id, locationId: o.location_id,
     pieceId: o.piece_id, quantity: o.quantity, grossWeight: o.gross_weight, netWeight: o.net_weight,
     fineWeight: o.fine_weight, value: o.value, sourceType, sourceId, sourceLineId: o.source_line_id,
     reversesMovementId: o.id, note,
-  })), { allowNegative: true });
+  })), { allowNegative: !strict });
 }
 
 /** Rebuilds stock_balance from the movement journal. The safety net. */

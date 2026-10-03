@@ -13,8 +13,8 @@ import { asPlatform, asTenant } from '../core/db/client.js';
 import { syncSchema } from '../core/db/schema/sync.js';
 import { provisionTenant } from '../modules/tenancy/provisioning.service.js';
 import { createOrder } from '../modules/orders/orders.service.js';
-import { createSalesInvoice, postSalesInvoice } from '../modules/sales/sales.service.js';
-import { createPurchaseInvoice, postPurchaseInvoice } from '../modules/purchase/purchase.service.js';
+import { checkout } from '../modules/sales/sales.service.js';
+import { createInward } from '../modules/purchase/purchase.service.js';
 import { repo } from '../core/db/repository.js';
 import { newId } from '../core/util/id.js';
 import { logger } from '../core/util/logger.js';
@@ -171,11 +171,16 @@ async function seedTenant(seed: TenantSeed, password: string) {
       const row = await repo(tx, 'item').insert({
         code: d.code, name: d.name, nature: d.nature, tracking: d.tracking,
         category_id: d.cat ? categories.get(d.cat) : null, metal_id: d.metal,
-        default_purity_id: d.purity, hsn_code: '7113', default_making_rate: d.making,
-        default_wastage_percent: d.tracking === 'piece' ? '8' : '0', uom: 'gram', is_active: true,
+        default_purity_id: d.purity, hsn_code: '7113', uom: 'gram', is_active: true,
       });
       items.set(d.code, (row as { id: string }).id);
     }
+    // Making per item and 8% wastage on pieces, as Masters → Formulas rules.
+    const itemRules = itemDefs.flatMap((d) => [
+      ...(Number(d.making) > 0 ? [{ code: `MK-${d.code}`, name: `${d.name} making`, applies_to: 'making', basis: 'per_gram', rate: d.making, item_id: items.get(d.code) }] : []),
+      ...(d.tracking === 'piece' ? [{ code: `WS-${d.code}`, name: `${d.name} wastage`, applies_to: 'wastage', basis: 'percent', rate: '8', item_id: items.get(d.code) }] : []),
+    ]);
+    if (itemRules.length) await repo(tx, 'price_rule').insertMany(itemRules);
 
     // a scheme plan
     await repo(tx, 'scheme_plan').insert({
@@ -204,12 +209,15 @@ async function seedTransactions(tenantId: string, branchId: string) {
     const vault = await id(`select id from stock_location where branch_id = $1 order by (kind='vault') desc limit 1`, [branchId]);
     const counter = await id(`select id from stock_location where branch_id = $1 order by (kind='counter') desc limit 1`, [branchId]);
 
-    // 1. buy 500g of 22K
-    const purchase = await createPurchaseInvoice(tx, {
-      supplierId: supplier, branchId, docDate: today(), supplierInvoiceNumber: 'MBT/2026/4471',
-      lines: [{ itemId: bulk, purityId: p22, locationId: vault, grossWeight: '500.000', ratePerGram: '6640' }],
+    // Documents are raised at a branch.
+    (tx.context as { branchId: string | null }).branchId = branchId;
+
+    // 1. buy 500g of 22K, with the bill
+    await createInward(tx, {
+      supplierId: supplier, locationId: vault,
+      lines: [{ itemId: bulk, purityId: p22, grossWeight: '500.000', metalBasis: 'rupee', ratePerGram: '6640' }],
+      bill: { supplierInvoiceNumber: 'MBT/2026/4471', supplierInvoiceDate: today() },
     });
-    await postPurchaseInvoice(tx, (purchase as { id: string }).id);
 
     // 2. tag finished pieces (raises stock through the tagging service)
     const { tagAll } = await import('../modules/tagging/tagging.service.js');
@@ -284,33 +292,22 @@ async function seedTransactions(tenantId: string, branchId: string) {
         quantity: '25', grossWeight: '10.000', ratePerGram: '6860', makingRate: '150' }],
     });
 
-    // 4. bill one sale, settled by cash + UPI
-    const invoice = await createSalesInvoice(tx, {
-      customerId: await c('C-001'), branchId, docDate: today(), channel: 'counter',
-      lines: [{ itemId: ring, purityId: p22, pieceId: pieces[0], locationId: counter,
-        grossWeight: '8.450', stoneWeight: '0.350', ratePerGram: '6860', makingRate: '520', wastagePercent: '8' }],
-      payments: [{ mode: 'cash', amount: '30000' }, { mode: 'upi', amount: '32000', reference: 'UPI99321' }],
+    // 4. bill one ring, part cash and part UPI; the rest stays on the customer
+    await checkout(tx, {
+      customerId: await c('C-001'), lines: [{ pieceId: pieces[0] }],
+      tenders: [
+        { paymentMethodId: await id(`select id from payment_method where code = 'CASH'`), amount: '30000' },
+        { paymentMethodId: await id(`select id from payment_method where code = 'UPI'`), amount: '32000', reference: 'UPI99321' },
+      ],
     });
-    await postSalesInvoice(tx, (invoice as { id: string }).id);
 
-    // 5. an old-gold intake
-    const { nextDocumentNumber } = await import('../modules/numbering/numbering.service.js');
-    const { number: ogNumber } = await nextDocumentNumber(tx, 'old_gold', { branchId });
-    const ogId = newId();
-    await repo(tx, 'old_gold_intake').insert({
-      id: ogId, voucher_number: ogNumber, voucher_date: today(), branch_id: branchId,
-      customer_id: await c('C-008'), status: 'tested', settlement_type: 'exchange',
-      rate_per_gram: '6640', total_gross_weight: '22.000', total_deduction_weight: '2.600',
-      total_net_weight: '19.400', total_fine_weight: '15.170', gross_value: '100728.80',
-      deduction_amount: '0', net_value: '100728.80',
-    });
-    await repo(tx, 'old_gold_item').insert({
-      old_gold_intake_id: ogId, line_number: 1, description: 'Old 22K bangle pair, worn',
-      metal_id: await id(`select id from metal where code='GOLD'`),
-      gross_weight: '22.000', stone_weight: '1.800', dirt_weight: '0.500', solder_weight: '0.300',
-      net_weight: '19.400', test_method: 'xrf', tested_purity_percent: '78.200',
-      declared_purity_percent: '91.600', test_instrument: 'Bruker S1 TITAN XRF',
-      tested_at: new Date(), fine_weight: '15.170', rate_per_gram: '6640', value: '100728.80',
+    // 5. old gold taken in: credited to the customer to spend on a bill
+    const { createIntake } = await import('../modules/oldgold/oldgold.service.js');
+    await createIntake(tx, {
+      customerId: await c('C-008'), settlement: 'exchange',
+      lines: [{ description: 'Old 22K bangle pair, worn', metalId: await id(`select id from metal where code='GOLD'`),
+        grossWeight: '22.000', stoneWeight: '1.800', dirtWeight: '0.800', testMethod: 'xrf', testedPurityPercent: '78.200',
+        declaredPurityPercent: '91.600', testInstrument: 'Bruker S1 TITAN XRF' }],
     });
 
     logger.info({ tenantId }, 'transactions seeded');
@@ -327,17 +324,18 @@ async function wipeDemoData(): Promise<void> {
     const order = [
       'order_communication', 'order_acknowledgement', 'order_attachment', 'order_payment',
       'order_stage_event', 'order_line', 'retail_order', 'order_pipeline',
+      'approval_memo_line', 'approval_memo', 'customer_receipt',
       'sales_payment', 'sales_return_line', 'sales_return', 'sales_invoice_line', 'sales_invoice',
-      'purchase_return_line', 'purchase_return', 'purchase_invoice_line', 'purchase_invoice',
-      'goods_receipt_line', 'goods_receipt', 'purchase_order_line', 'purchase_order',
+      'supplier_settlement', 'purchase_return_line', 'purchase_return', 'tagging_lot',
+      'goods_receipt_line', 'goods_receipt', 'purchase_invoice', 'purchase_order_line', 'purchase_order',
       'girvi_repayment', 'girvi_accrual', 'girvi_collateral', 'girvi_loan',
       'scheme_redemption', 'scheme_installment', 'scheme_account', 'scheme_plan',
-      'old_gold_item', 'old_gold_intake', 'melt_batch',
+      'old_gold_payout', 'old_gold_item', 'old_gold_intake', 'melt_batch',
       'tag_print_job_item', 'tag_print_job', 'huid_assignment', 'tag_template',
       'metal_ledger_entry', 'ledger_entry', 'voucher',
       'karigar_ledger', 'karigar',
       'stock_movement', 'stock_balance', 'stock_piece',
-      'metal_rate', 'item', 'item_category', 'purity', 'metal', 'party',
+      'metal_rate', 'price_rule', 'item', 'item_category', 'purity', 'metal', 'party',
       'numbering_gap', 'numbering_series', 'config_value', 'dashboard_layout',
       'audit_log', 'refresh_token', 'user_role', 'role_permission', 'role', 'app_user',
       'tenant_theme', 'stock_location', 'branch', 'account', 'tenant_module',

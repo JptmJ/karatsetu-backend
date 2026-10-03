@@ -73,7 +73,7 @@ export const TENANT_ROLES = [
     isBranchAdmin: false,
     permissions: [
       'pos.view', 'pos.create', 'orders.view', 'stock.view',
-      'oldgold.view', 'schemes.collection.view', 'schemes.collection.create',
+      'oldgold.view', 'oldgold.create', 'oldgold.payout', 'schemes.collection.view', 'schemes.collection.create',
       'master.customer.view', 'master.customer.create', 'master.rates.view',
     ],
   },
@@ -84,7 +84,7 @@ export const TENANT_ROLES = [
     isBranchAdmin: false,
     permissions: [
       'accounts.*', 'reports.*',
-      'pos.view', 'orders.view', 'stock.view',
+      'pos.view', 'pos.purchase.view', 'oldgold.view', 'orders.view', 'stock.view',
       'girvi.view', 'schemes.accounts.view', 'schemes.collection.view',
       'master.customer.view', 'master.rates.view',
       'settings.config.view',
@@ -98,8 +98,8 @@ export const TENANT_ROLES = [
     permissions: [
       'stock.view', 'stock.opening.create', 'stock.transfer.create', 'stock.transfer.post', 'stock.transfer.cancel',
       'stock.count.create', 'tagging.*',
-      'pos.purchase.view', 'pos.purchase.create',
-      'master.item.view', 'master.purity.view', 'master.branch.view', 'master.rates.view',
+      'pos.purchase.view', 'pos.purchase.create', 'oldgold.view', 'oldgold.melt',
+      'master.item.view', 'master.purity.view', 'master.branch.view', 'master.rates.view', 'master.customer.view',
     ],
   },
 ] as const;

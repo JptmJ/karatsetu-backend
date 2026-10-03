@@ -33,6 +33,10 @@ export interface RuleSnapshot {
 }
 
 export type GstComponent = 'metal' | 'wastage' | 'making' | 'stone' | 'hallmark';
+export type MetalBasis = 'net' | 'fine' | 'gross';
+export type DiscountOn = 'making' | 'charges' | 'total';
+const DISCOUNT_TARGETS: Record<DiscountOn, GstComponent[] | null> = { making: ['making'], charges: ['making', 'wastage'], total: null };
+const DISCOUNT_NAMES: Record<DiscountOn, string> = { making: 'the making charge', charges: 'making and wastage', total: 'the line value' };
 
 export interface PriceLineInput {
   quantity: number;
@@ -40,14 +44,20 @@ export interface PriceLineInput {
   stoneWeightG?: string;
   otherWeightG?: string;
   finenessPercent: string;
+  /** The rate for `metalOn` weight: the purity's rate for net or gross, the pure (24K/999) rate for fine. */
   ratePerGram: string;
+  /** Which weight the metal is valued on. Wastage % is taken of the same weight. Default net. */
+  metalOn?: MetalBasis;
   making?: RuleSnapshot | null;
   makingOn?: 'net' | 'gross';
   /** basis 'percent' = % of net weight added as metal; anything else = an amount. */
   wastage?: RuleSnapshot | null;
   stoneAmount?: string;
   hallmarkAmount?: string;
-  discount?: { amount: string; on: 'making' | 'total' } | null;
+  /** Used when hallmarkAmount is not given: a Masters → Formulas hallmark rule for a hallmarked piece. */
+  hallmark?: RuleSnapshot | null;
+  /** 'charges' = making and wastage together — never the metal, stones or tax. */
+  discount?: { amount: string; on: DiscountOn } | null;
   /** Wastage is taxed at the metal rate. */
   gstPercent: { metal: string; making: string; stone: string; hallmark: string };
   interState: boolean;
@@ -55,6 +65,8 @@ export interface PriceLineInput {
 
 export interface PriceLineResult {
   netWeightG: string; fineWeightG: string; wastageWeightG: string;
+  /** The weight the metal was valued on, and which one it was. */
+  metalWeightG: string; metalOn: MetalBasis;
   metalAmount: string; wastageAmount: string; makingAmount: string;
   stoneAmount: string; hallmarkAmount: string; discountAmount: string;
   taxableAmount: string; gstAmount: string; cgstAmount: string; sgstAmount: string; igstAmount: string;
@@ -148,13 +160,15 @@ export function priceLine(input: PriceLineInput): PriceLineResult {
 
   const rate = d(input.ratePerGram);
   const fine = grams(net.mul(d(input.finenessPercent)).div(100));
-  const metal = money(net.mul(rate));
+  const metalOn = input.metalOn ?? 'net';
+  const metalWeight = metalOn === 'fine' ? fine : metalOn === 'gross' ? gross : net;
+  const metal = money(metalWeight.mul(rate));
 
   let wastageWeight = ZERO;
   let wastage = ZERO;
   if (input.wastage) {
     if (input.wastage.basis === 'percent') {
-      wastageWeight = grams(net.mul(d(input.wastage.rate)).div(100));
+      wastageWeight = grams(metalWeight.mul(d(input.wastage.rate)).div(100));
       wastage = money(wastageWeight.mul(rate));
     } else {
       wastage = ruleAmount(input.wastage, net, metal, qty);
@@ -170,19 +184,19 @@ export function priceLine(input: PriceLineInput): PriceLineResult {
     { component: 'wastage', amount: wastage, discount: ZERO, gst: d(input.gstPercent.metal) },
     { component: 'making', amount: making, discount: ZERO, gst: d(input.gstPercent.making) },
     { component: 'stone', amount: money(d(input.stoneAmount)), discount: ZERO, gst: d(input.gstPercent.stone) },
-    { component: 'hallmark', amount: money(d(input.hallmarkAmount)), discount: ZERO, gst: d(input.gstPercent.hallmark) },
+    { component: 'hallmark', amount: input.hallmarkAmount === undefined && input.hallmark ? ruleAmount(input.hallmark, net, metal, qty) : money(d(input.hallmarkAmount)),
+      discount: ZERO, gst: d(input.gstPercent.hallmark) },
   ];
 
   const discount = money(d(input.discount?.amount));
   if (discount.isNegative()) throw new PricingError('Discount cannot be negative.');
   if (discount.gt(0)) {
     const on = input.discount!.on;
-    const targets = on === 'making' ? parts.filter((p) => p.component === 'making') : parts;
+    const only = DISCOUNT_TARGETS[on];
+    const targets = only ? parts.filter((p) => only.includes(p.component)) : parts;
     const available = sum(targets.map((p) => p.amount));
     if (discount.gt(available)) {
-      throw new PricingError(on === 'making'
-        ? `Discount ₹${discount.toFixed(2)} is more than the making charge ₹${available.toFixed(2)}.`
-        : `Discount ₹${discount.toFixed(2)} is more than the line value ₹${available.toFixed(2)}.`);
+      throw new PricingError(`Discount ₹${discount.toFixed(2)} is more than ${DISCOUNT_NAMES[on]} ₹${available.toFixed(2)}.`);
     }
     allocate(discount, targets.map((p) => p.amount)).forEach((share, i) => { targets[i]!.discount = share; });
   }
@@ -205,6 +219,8 @@ export function priceLine(input: PriceLineInput): PriceLineResult {
     netWeightG: grams(net).toFixed(3),
     fineWeightG: fine.toFixed(3),
     wastageWeightG: wastageWeight.toFixed(3),
+    metalWeightG: grams(metalWeight).toFixed(3),
+    metalOn,
     metalAmount: m2(metal),
     wastageAmount: m2(wastage),
     makingAmount: m2(making),

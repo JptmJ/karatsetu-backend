@@ -2,7 +2,7 @@
   "info": {
     "name": "RatnaGrid API",
     "_postman_id": "ratnagrid-api-collection",
-    "description": "# RatnaGrid API\n\nGenerated from the running server on 2026-09-29.\n178 endpoints.\n\n## Start here\n\n1. Set `baseUrl` — it defaults to the deployed backend.\n2. **Super admin work:** run `Platform Operator → POST platform/auth/login`.\n   The token is saved automatically into `platformToken`.\n3. **Shop staff work:** run `Settings → POST auth/login` with a `tenantCode`.\n   That token is saved into `token`, and the branch into `branchId`.\n\nEvery other request picks the right token up by itself.\n\n## Why two logins\n\nA super admin has no tenant, so they sign in with just email and password.\nShop staff belong to one business, so they also send `tenantCode` — that is\nwhat tells the server which shop `rajesh@gmail.com` works at.\n\n## Variables\n\n- `baseUrl` — the server\n- `platformToken` / `token` — filled in by the two logins\n- `tenantId`, `branchId`, `id` — fill these in as you go\n- `today`, `nowIso` — set automatically before each request",
+    "description": "# RatnaGrid API\n\nGenerated from the running server on 2026-09-30.\n216 endpoints.\n\n## Start here\n\n1. Set `baseUrl` — it defaults to the deployed backend.\n2. **Super admin work:** run `Platform Operator → POST platform/auth/login`.\n   The token is saved automatically into `platformToken`.\n3. **Shop staff work:** run `Settings → POST auth/login` with a `tenantCode`.\n   That token is saved into `token`, and the branch into `branchId`.\n\nEvery other request picks the right token up by itself.\n\n## Why two logins\n\nA super admin has no tenant, so they sign in with just email and password.\nShop staff belong to one business, so they also send `tenantCode` — that is\nwhat tells the server which shop `rajesh@gmail.com` works at.\n\n## Variables\n\n- `baseUrl` — the server\n- `platformToken` / `token` — filled in by the two logins\n- `tenantId`, `branchId`, `id` — fill these in as you go\n- `today`, `nowIso` — set automatically before each request",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -2422,7 +2422,7 @@
             "description": "Create a item\n\n**Permission:** `master.item.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"nature\": \"finished\",\n  \"tracking\": \"piece\",\n  \"category_id\": \"{{category_id}}\",\n  \"metal_id\": \"{{metal_id}}\",\n  \"default_purity_id\": \"{{default_purity_id}}\",\n  \"hsn_code\": \"CODE01\",\n  \"default_making_rate\": \"6500.00\",\n  \"default_wastage_percent\": \"8\",\n  \"uom\": \"gram\"\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"name\": \"Example name\",\n  \"nature\": \"finished\",\n  \"tracking\": \"piece\",\n  \"category_id\": \"{{category_id}}\",\n  \"metal_id\": \"{{metal_id}}\",\n  \"default_purity_id\": \"{{default_purity_id}}\",\n  \"hsn_code\": \"CODE01\",\n  \"uom\": \"gram\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2531,7 +2531,7 @@
             "description": "Only the fields you send are changed.\n\n**Permission:** `master.item.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"category_id\": \"{{category_id}}\",\n  \"default_purity_id\": \"{{default_purity_id}}\",\n  \"hsn_code\": \"CODE01\",\n  \"default_making_rate\": \"6500.00\",\n  \"default_wastage_percent\": \"8\",\n  \"is_active\": false\n}",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"category_id\": \"{{category_id}}\",\n  \"default_purity_id\": \"{{default_purity_id}}\",\n  \"hsn_code\": \"CODE01\",\n  \"is_active\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4801,6 +4801,83 @@
       "description": "Speed billing, metal-rate calculations, Old Gold offsets, GST 3% tax invoices.",
       "item": [
         {
+          "name": "POST pos/checkout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "checkout"
+              ],
+              "query": []
+            },
+            "description": "Prices every line on the server (rate; making and wastage from the tag, else Masters → Formulas; GST), takes the discount off making and wastage, takes the tenders and posts at once: stock out at cost, the books, and any unpaid balance on the customer. A discount above the counter limit needs `approver` (someone with discount approval) unless the biller has it. A bill of ₹2 lakh or more needs the customer’s PAN; cash reaching ₹2 lakh from one customer in a day (bills and receipts together) is refused. Without customerId it is a walk-in bill: paid in full, under ₹2 lakh, no advance.\n\n**Permission:** `pos.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The posted bill with its lines and payments, and any pricing warnings.\n- `422` — Piece not in stock, discount needs approval, PAN needed, cash limit, overpayment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"lines\": [\n    {\n      \"pieceId\": \"{{pieceId}}\",\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"locationId\": \"{{locationId}}\",\n      \"grossWeight\": \"10.000\",\n      \"hallmarkAmount\": \"6500.00\"\n    }\n  ],\n  \"tenders\": [\n    {\n      \"paymentMethodId\": \"{{paymentMethodId}}\",\n      \"amount\": \"6500.00\",\n      \"reference\": \"text\"\n    }\n  ],\n  \"discount\": \"text\",\n  \"approver\": {\n    \"identifier\": \"text\",\n    \"password\": \"changeme123\"\n  },\n  \"pan\": \"AABCU9603R\",\n  \"salespersonId\": \"{{salespersonId}}\",\n  \"notes\": \"text\",\n  \"expectedTotal\": \"text\",\n  \"oldGold\": {\n    \"lines\": [\n      {\n        \"description\": \"text\",\n        \"metalId\": \"{{metalId}}\",\n        \"itemCategoryId\": \"{{itemCategoryId}}\",\n        \"grossWeight\": \"10.000\",\n        \"stoneWeight\": \"10.000\",\n        \"dirtWeight\": \"10.000\",\n        \"testMethod\": \"xrf\",\n        \"testedPurityPercent\": \"8\",\n        \"declaredPurityPercent\": \"8\",\n        \"testInstrument\": \"text\",\n        \"huid\": \"{{huid}}\",\n        \"ownPiece\": \"text\"\n      }\n    ],\n    \"locationId\": \"{{locationId}}\",\n    \"idProof\": {\n      \"type\": \"aadhaar\",\n      \"number\": \"text\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET pos/customers/:id/balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/customers/{{id}}/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "customers",
+                "{{id}}",
+                "balance"
+              ],
+              "query": []
+            },
+            "description": "Owed on bills, advance and credit notes, bills with a balance, and pieces out on approval.\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The balance."
+          },
+          "response": []
+        },
+        {
           "name": "GET pos/invoices",
           "request": {
             "method": "GET",
@@ -4827,8 +4904,14 @@
               ],
               "query": [
                 {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
                   "key": "status",
-                  "value": "draft",
+                  "value": "posted",
                   "disabled": true,
                   "description": ""
                 },
@@ -4839,8 +4922,8 @@
                   "description": ""
                 },
                 {
-                  "key": "branchId",
-                  "value": "{{branchId}}",
+                  "key": "due",
+                  "value": "true",
                   "disabled": true,
                   "description": ""
                 },
@@ -4857,64 +4940,20 @@
                   "description": ""
                 },
                 {
-                  "key": "limit",
-                  "value": "50",
+                  "key": "cursor",
+                  "value": "text",
                   "disabled": true,
                   "description": ""
                 },
                 {
-                  "key": "offset",
-                  "value": "0",
+                  "key": "limit",
+                  "value": "50",
                   "disabled": true,
                   "description": ""
                 }
               ]
             },
-            "description": "List sales invoices\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Invoices, newest first."
-          },
-          "response": []
-        },
-        {
-          "name": "POST pos/invoices",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/pos/invoices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "pos",
-                "invoices"
-              ],
-              "query": []
-            },
-            "description": "Prices every line server-side from the rate master and the tenant’s making/wastage config, then applies GST — CGST+SGST within the state, IGST across it, zero-rated for export. Creates a draft; nothing moves until you post it.\n\n**Permission:** `pos.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Draft invoice with all totals computed.\n- `422` — Rate missing, payments over total, or back-dating off.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"branchId\": \"{{branchId}}\",\n  \"docDate\": \"{{today}}\",\n  \"channel\": \"counter\",\n  \"salespersonId\": \"{{salespersonId}}\",\n  \"otherCharges\": \"text\",\n  \"notes\": \"text\",\n  \"lines\": [\n    {\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"pieceId\": \"{{pieceId}}\",\n      \"locationId\": \"{{locationId}}\",\n      \"description\": \"text\",\n      \"quantity\": \"text\",\n      \"grossWeight\": \"10.000\",\n      \"stoneWeight\": \"10.000\",\n      \"ratePerGram\": \"6500.00\",\n      \"makingBasis\": \"per_gram\",\n      \"makingRate\": \"6500.00\",\n      \"wastagePercent\": \"8\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"mode\": \"cash\",\n      \"amount\": \"6500.00\",\n      \"reference\": \"text\",\n      \"accountId\": \"{{accountId}}\",\n      \"notes\": \"text\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
+            "description": "Bills\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
           },
           "response": []
         },
@@ -4946,7 +4985,7 @@
               ],
               "query": []
             },
-            "description": "One invoice with lines and payments\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The tax invoice.\n- `404` — Not found."
+            "description": "One bill: lines, payments and returns, ready to print\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The bill.\n- `404` — Not found."
           },
           "response": []
         },
@@ -4983,7 +5022,7 @@
               ],
               "query": []
             },
-            "description": "A posted invoice is reversed, never edited — stock comes back and mirrored ledger entries are written, leaving both the original and the correction visible.\n\n**Permission:** `pos.cancel`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled and reversed.\n- `422` — Already cancelled, or an IRN exists and must be cancelled on the GST portal first.",
+            "description": "Everything reverses and the pieces go back on the shelf. Not once goods came back on a return or a receipt was paid against it.\n\n**Permission:** `pos.cancel`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled.\n- `422` — Returned, paid against, or has an IRN.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Reason for the change\"\n}",
@@ -4997,9 +5036,9 @@
           "response": []
         },
         {
-          "name": "POST pos/invoices/:id/post",
+          "name": "GET pos/memos",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
                 "key": "Authorization",
@@ -5012,25 +5051,48 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/pos/invoices/{{id}}/post",
+              "raw": "{{baseUrl}}/api/pos/memos",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "pos",
-                "invoices",
-                "{{id}}",
-                "post"
+                "memos"
               ],
-              "query": []
+              "query": [
+                {
+                  "key": "status",
+                  "value": "open",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "overdue",
+                  "value": "true",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
             },
-            "description": "The moment everything happens, in one transaction: stock leaves at cost, revenue and GST are recognised, the customer is debited for any balance, and the piece is marked sold. After this the invoice is read-only.\n\n**Permission:** `pos.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Posted.\n- `422` — Already posted, cancelled, empty, or not enough stock."
+            "description": "Approval memos\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
           },
           "response": []
         },
         {
-          "name": "POST pos/purchases",
+          "name": "POST pos/memos",
           "request": {
             "method": "POST",
             "header": [
@@ -5049,21 +5111,21 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/pos/purchases",
+              "raw": "{{baseUrl}}/api/pos/memos",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "pos",
-                "purchases"
+                "memos"
               ],
               "query": []
             },
-            "description": "The buying side. Posting raises stock and credits the supplier.\n\n**Permission:** `pos.purchase.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Draft purchase invoice.\n- `422` — Not a supplier, or back-dating is off.",
+            "description": "The pieces stay ours and show \"On approval\". Bill them to the same customer from the counter, or take them back.\n\n**Permission:** `pos.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The memo.\n- `422` — A piece is not in stock here.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"supplierId\": \"{{supplierId}}\",\n  \"branchId\": \"{{branchId}}\",\n  \"docDate\": \"{{today}}\",\n  \"supplierInvoiceNumber\": \"text\",\n  \"supplierInvoiceDate\": \"{{today}}\",\n  \"dueDate\": \"{{today}}\",\n  \"raisesStock\": true,\n  \"otherCharges\": \"text\",\n  \"notes\": \"text\",\n  \"lines\": [\n    {\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"locationId\": \"{{locationId}}\",\n      \"description\": \"text\",\n      \"quantity\": \"text\",\n      \"grossWeight\": \"10.000\",\n      \"stoneWeight\": \"10.000\",\n      \"ratePerGram\": \"6500.00\",\n      \"makingBasis\": \"per_gram\",\n      \"makingRate\": \"6500.00\",\n      \"wastagePercent\": \"8\",\n      \"stoneAmount\": \"6500.00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"pieceIds\": [\n    \"{{id}}\"\n  ],\n  \"dueDate\": \"{{today}}\",\n  \"notes\": \"text\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5074,7 +5136,39 @@
           "response": []
         },
         {
-          "name": "POST pos/purchases/:id/cancel",
+          "name": "GET pos/memos/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/memos/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "memos",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "One approval memo\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The memo with each piece: out, returned or billed."
+          },
+          "response": []
+        },
+        {
+          "name": "POST pos/memos/:id/return",
           "request": {
             "method": "POST",
             "header": [
@@ -5093,20 +5187,236 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/pos/purchases/{{id}}/cancel",
+              "raw": "{{baseUrl}}/api/pos/memos/{{id}}/return",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "pos",
-                "purchases",
+                "memos",
+                "{{id}}",
+                "return"
+              ],
+              "query": []
+            },
+            "description": "Take pieces back from approval\n\n**Permission:** `pos.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The memo; it closes when every piece is back or billed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pieceIds\": [\n    \"{{id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST pos/quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "quote"
+              ],
+              "query": []
+            },
+            "description": "The same pricing checkout will save — tag terms, formulas, discount on making and wastage, GST, round off — with each line’s metal, wastage and making, and where they came from. Nothing is saved.\n\n**Permission:** `pos.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Lines, totals, the most discount allowed and the limit before approval, and pricing warnings.\n- `422` — Piece not in stock, or discount above making and wastage.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"lines\": [\n    {\n      \"pieceId\": \"{{pieceId}}\",\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"locationId\": \"{{locationId}}\",\n      \"grossWeight\": \"10.000\",\n      \"hallmarkAmount\": \"6500.00\"\n    }\n  ],\n  \"discount\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET pos/receipts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "receipts"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Customer receipts\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST pos/receipts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "receipts"
+              ],
+              "query": []
+            },
+            "description": "Clears their oldest unpaid bills first; anything more is kept as advance for a later bill.\n\n**Permission:** `pos.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The receipt with the bills it cleared.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"amount\": \"6500.00\",\n  \"paymentMethodId\": \"{{paymentMethodId}}\",\n  \"reference\": \"text\",\n  \"notes\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET pos/receipts/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/receipts/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "receipts",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "One receipt, as it prints\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The receipt with the shop, the customer and the bills it cleared."
+          },
+          "response": []
+        },
+        {
+          "name": "POST pos/receipts/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/receipts/{{id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "receipts",
                 "{{id}}",
                 "cancel"
               ],
               "query": []
             },
-            "description": "Cancel a purchase invoice\n\n**Permission:** `pos.purchase.cancel`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled and reversed.",
+            "description": "Cancel a receipt\n\n**Permission:** `pos.cancel`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled; the bills it cleared are owed again.\n- `422` — Its advance was already used.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Reason for the change\"\n}",
@@ -5120,9 +5430,9 @@
           "response": []
         },
         {
-          "name": "POST pos/purchases/:id/post",
+          "name": "GET pos/returns",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
                 "key": "Authorization",
@@ -5135,20 +5445,144 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/pos/purchases/{{id}}/post",
+              "raw": "{{baseUrl}}/api/pos/returns",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "pos",
-                "purchases",
-                "{{id}}",
-                "post"
+                "returns"
+              ],
+              "query": [
+                {
+                  "key": "customerId",
+                  "value": "{{customerId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Customer returns\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST pos/returns",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/returns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "returns"
               ],
               "query": []
             },
-            "description": "Post a purchase — stock in, supplier credited\n\n**Permission:** `pos.purchase.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Posted.\n- `422` — Already posted or empty."
+            "description": "Against one bill. The value comes back in proportion, first clearing anything still owed on that bill, then as a refund or a credit note for an exchange.\n\n**Permission:** `pos.return.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The return.\n- `422` — Already returned, weight above what was sold.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoiceId\": \"{{invoiceId}}\",\n  \"lines\": [\n    {\n      \"invoiceLineId\": \"{{invoiceLineId}}\",\n      \"netWeight\": \"10.000\"\n    }\n  ],\n  \"settlement\": \"refund\",\n  \"refundPaymentMethodId\": \"{{refundPaymentMethodId}}\",\n  \"deduction\": \"text\",\n  \"locationId\": \"{{locationId}}\",\n  \"reason\": \"defect\",\n  \"notes\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET pos/scan/:code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/scan/{{code}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "scan",
+                "{{code}}"
+              ],
+              "query": []
+            },
+            "description": "Exact match on the tag or HUID. Says where the piece is when it cannot be sold here.\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The piece.\n- `404` — No piece has that tag or HUID."
+          },
+          "response": []
+        },
+        {
+          "name": "GET pos/tenders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pos/tenders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pos",
+                "tenders"
+              ],
+              "query": []
+            },
+            "description": "Payment methods offered at this branch\n\n**Permission:** `pos.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — From Masters → Payment Modes, in their order."
           },
           "response": []
         },
@@ -5971,6 +6405,52 @@
           "response": []
         },
         {
+          "name": "POST stock/pieces/:id/pricing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/pieces/{{id}}/pricing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "pieces",
+                "{{id}}",
+                "pricing"
+              ],
+              "query": []
+            },
+            "description": "A repricing, or a mistake at tagging. Send nulls to hand the piece back to Masters → Formulas.\n\n**Permission:** `tagging.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated piece.\n- `422` — Not in stock, or making/wastage out of range.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"makingBasis\": \"text\",\n  \"makingRate\": \"6500.00\",\n  \"wastagePercent\": \"8\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "POST stock/pieces/:id/weights",
           "request": {
             "method": "POST",
@@ -6258,6 +6738,83 @@
       "name": "Tagging & Barcoding",
       "description": "Dual-wing jewellery string tags, QR labels, thermal printer queues & BIS mapping.",
       "item": [
+        {
+          "name": "GET purchase/lots",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/lots",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "lots"
+              ],
+              "query": []
+            },
+            "description": "Purchase lots waiting in Tagging\n\n**Permission:** `tagging.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Open lots at this branch, oldest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/lots/:id/close",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/lots/{{id}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "lots",
+                "{{id}}",
+                "close"
+              ],
+              "query": []
+            },
+            "description": "Whatever was not tagged (a weighing difference, a missing piece) leaves stock on one tagging-difference adjustment.\n\n**Permission:** `stock.adjustment.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Closed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
         {
           "name": "POST stock/pieces/:id/huid",
           "request": {
@@ -6634,38 +7191,26 @@
               ],
               "query": [
                 {
-                  "key": "status",
-                  "value": "draft",
-                  "disabled": true,
-                  "description": ""
-                },
-                {
-                  "key": "settlementType",
-                  "value": "exchange",
-                  "disabled": true,
-                  "description": ""
-                },
-                {
                   "key": "customerId",
                   "value": "{{customerId}}",
                   "disabled": true,
                   "description": ""
                 },
                 {
-                  "key": "branchId",
-                  "value": "{{branchId}}",
+                  "key": "status",
+                  "value": "posted",
                   "disabled": true,
                   "description": ""
                 },
                 {
-                  "key": "from",
-                  "value": "{{today}}",
+                  "key": "search",
+                  "value": "text",
                   "disabled": true,
-                  "description": ""
+                  "description": "Voucher number, customer name or mobile."
                 },
                 {
-                  "key": "to",
-                  "value": "{{today}}",
+                  "key": "cursor",
+                  "value": "text",
                   "disabled": true,
                   "description": ""
                 },
@@ -6674,16 +7219,10 @@
                   "value": "50",
                   "disabled": true,
                   "description": ""
-                },
-                {
-                  "key": "offset",
-                  "value": "0",
-                  "disabled": true,
-                  "description": ""
                 }
               ]
             },
-            "description": "List appraisal vouchers\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Vouchers."
+            "description": "Old gold intakes\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first, with the credit still unpaid and whether any is melted."
           },
           "response": []
         },
@@ -6718,10 +7257,10 @@
               ],
               "query": []
             },
-            "description": "Records what the customer brought in, item by item, with XRF readings and the deductions that turn gross weight into actual metal. Fine weight and value are computed server-side from the buying rate.\n\n**Permission:** `oldgold.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Voucher with totals and net payable.\n- `422` — Deductions exceed gross weight, or purity out of range.",
+            "description": "Posts at once: old gold into stock at the location, its value credited to the customer. `exchange` keeps the credit to spend on a bill or as advance; `buyback` pays it out now (needs `payout`). Proof of identity and PAN are asked as Old Gold settings and the ₹2 lakh rule say; cash payouts follow the daily cash limit.\n\n**Permission:** `oldgold.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The intake with its articles.\n- `422` — Identity, PAN, cash limit, rate or article checks.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"branchId\": \"{{branchId}}\",\n  \"voucherDate\": \"{{today}}\",\n  \"settlementType\": \"exchange\",\n  \"ratePerGram\": \"6500.00\",\n  \"deductionAmount\": \"6500.00\",\n  \"notes\": \"text\",\n  \"items\": [\n    {\n      \"description\": \"text\",\n      \"metalId\": \"{{metalId}}\",\n      \"itemCategoryId\": \"{{itemCategoryId}}\",\n      \"grossWeight\": \"10.000\",\n      \"stoneWeight\": \"10.000\",\n      \"dirtWeight\": \"10.000\",\n      \"solderWeight\": \"10.000\",\n      \"testMethod\": \"xrf\",\n      \"testedPurityPercent\": \"8\",\n      \"declaredPurityPercent\": \"8\",\n      \"testInstrument\": \"text\",\n      \"photoStorageKey\": \"text\"\n    }\n  ]\n}",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"locationId\": \"{{locationId}}\",\n  \"settlement\": \"exchange\",\n  \"payout\": {\n    \"paymentMethodId\": \"{{paymentMethodId}}\",\n    \"reference\": \"text\"\n  },\n  \"idProof\": {\n    \"type\": \"aadhaar\",\n    \"number\": \"text\"\n  },\n  \"pan\": \"AABCU9603R\",\n  \"notes\": \"text\",\n  \"lines\": [\n    {\n      \"description\": \"text\",\n      \"metalId\": \"{{metalId}}\",\n      \"itemCategoryId\": \"{{itemCategoryId}}\",\n      \"grossWeight\": \"10.000\",\n      \"stoneWeight\": \"10.000\",\n      \"dirtWeight\": \"10.000\",\n      \"testMethod\": \"xrf\",\n      \"testedPurityPercent\": \"8\",\n      \"declaredPurityPercent\": \"8\",\n      \"testInstrument\": \"text\",\n      \"huid\": \"{{huid}}\",\n      \"ownPiece\": \"text\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6732,7 +7271,39 @@
           "response": []
         },
         {
-          "name": "POST oldgold/intakes/:id/settle",
+          "name": "GET oldgold/intakes/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/oldgold/intakes/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oldgold",
+                "intakes",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "One intake, as it prints\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The intake, its articles and payouts, the shop and the customer."
+          },
+          "response": []
+        },
+        {
+          "name": "POST oldgold/intakes/:id/cancel",
           "request": {
             "method": "POST",
             "header": [
@@ -6751,7 +7322,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/oldgold/intakes/{{id}}/settle",
+              "raw": "{{baseUrl}}/api/oldgold/intakes/{{id}}/cancel",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -6760,14 +7331,60 @@
                 "oldgold",
                 "intakes",
                 "{{id}}",
-                "settle"
+                "cancel"
               ],
               "query": []
             },
-            "description": "The branch point. `exchange` links the credit to an invoice or order; `buyback` records a cash payout. Same intake, opposite accounting.\n\n**Permission:** `oldgold.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Settled.\n- `422` — Already settled, or the wrong fields for the chosen settlement type.",
+            "description": "Only while nothing is melted, nothing was paid out and the credit is unspent. One taken in on a bill is cancelled with the bill.\n\n**Permission:** `oldgold.cancel`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled.\n- `422` — Melted, paid out, on a bill or credit used.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"settlementType\": \"exchange\",\n  \"appliedToInvoiceId\": \"{{appliedToInvoiceId}}\",\n  \"appliedToOrderId\": \"{{appliedToOrderId}}\",\n  \"payoutMode\": \"cash\",\n  \"payoutReference\": \"text\"\n}",
+              "raw": "{\n  \"reason\": \"Reason for the change\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST oldgold/intakes/:id/payout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/oldgold/intakes/{{id}}/payout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oldgold",
+                "intakes",
+                "{{id}}",
+                "payout"
+              ],
+              "query": []
+            },
+            "description": "Pays the customer some or all of what is left of an intake’s credit (a buyback after all). Same identity, PAN and cash rules as a buyback.\n\n**Permission:** `oldgold.payout`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The intake.\n- `422` — More than is left, credit already spent, or a payment rule.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentMethodId\": \"{{paymentMethodId}}\",\n  \"amount\": \"6500.00\",\n  \"reference\": \"text\",\n  \"idProof\": {\n    \"type\": \"aadhaar\",\n    \"number\": \"text\"\n  },\n  \"pan\": \"AABCU9603R\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6804,14 +7421,8 @@
               ],
               "query": [
                 {
-                  "key": "search",
-                  "value": "text",
-                  "disabled": true,
-                  "description": "Matches batch_number."
-                },
-                {
                   "key": "status",
-                  "value": "open",
+                  "value": "melted",
                   "disabled": true,
                   "description": ""
                 },
@@ -6819,23 +7430,17 @@
                   "key": "cursor",
                   "value": "text",
                   "disabled": true,
-                  "description": "From the previous page's nextCursor (large lists only)."
+                  "description": ""
                 },
                 {
                   "key": "limit",
                   "value": "50",
                   "disabled": true,
                   "description": ""
-                },
-                {
-                  "key": "offset",
-                  "value": "0",
-                  "disabled": true,
-                  "description": ""
                 }
               ]
             },
-            "description": "Paginated. `total` is the count before paging, for the pager.\n\n**Permission:** `oldgold.melt.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Matching melt batchs.\n- `403` — Missing permission."
+            "description": "Melt and refine batches\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
           },
           "response": []
         },
@@ -6870,48 +7475,16 @@
               ],
               "query": []
             },
-            "description": "Create a melt batch\n\n**Permission:** `oldgold.melt.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — Created.\n- `400` — Validation failed — see `details`.\n- `409` — A record with that code already exists.",
+            "description": "`melt`: in-house, with what came out (bullion item, purity, weight, assay). `refine`: sent to `refinerId`, received later. One metal per batch; the hold period in settings applies.\n\n**Permission:** `oldgold.melt`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The batch.\n- `422` — Already melted, on hold, mixed metals or output checks.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"batch_number\": \"text\",\n  \"batch_date\": \"{{today}}\",\n  \"branch_id\": \"{{branch_id}}\",\n  \"metal_id\": \"{{metal_id}}\",\n  \"refiner_id\": \"{{refiner_id}}\",\n  \"notes\": \"text\"\n}",
+              "raw": "{\n  \"kind\": \"melt\",\n  \"itemIds\": [\n    \"{{id}}\"\n  ],\n  \"refinerId\": \"{{refinerId}}\",\n  \"output\": {\n    \"outputItemId\": \"{{outputItemId}}\",\n    \"outputPurityId\": \"{{outputPurityId}}\",\n    \"outputWeight\": \"10.000\",\n    \"assayPercent\": \"8\",\n    \"locationId\": \"{{locationId}}\"\n  },\n  \"notes\": \"text\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
-          },
-          "response": []
-        },
-        {
-          "name": "DELETE oldgold/melt-batches/:id",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/oldgold/melt-batches/{{id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "oldgold",
-                "melt-batches",
-                "{{id}}"
-              ],
-              "query": []
-            },
-            "description": "Hard delete. Fails if anything references it.\n\n**Permission:** `oldgold.melt.delete`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Removed.\n- `409` — Referenced elsewhere — deactivate instead."
           },
           "response": []
         },
@@ -6943,14 +7516,14 @@
               ],
               "query": []
             },
-            "description": "Get one melt batch\n\n**Permission:** `oldgold.melt.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The melt batch.\n- `404` — Not found, or belongs to another tenant."
+            "description": "One batch with the old gold in it\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The batch."
           },
           "response": []
         },
         {
-          "name": "PATCH oldgold/melt-batches/:id",
+          "name": "POST oldgold/melt-batches/:id/cancel",
           "request": {
-            "method": "PATCH",
+            "method": "POST",
             "header": [
               {
                 "key": "Authorization",
@@ -6967,7 +7540,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/oldgold/melt-batches/{{id}}",
+              "raw": "{{baseUrl}}/api/oldgold/melt-batches/{{id}}/cancel",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -6975,20 +7548,230 @@
                 "api",
                 "oldgold",
                 "melt-batches",
-                "{{id}}"
+                "{{id}}",
+                "cancel"
               ],
               "query": []
             },
-            "description": "Only the fields you send are changed.\n\n**Permission:** `oldgold.melt.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Updated.\n- `404` — Not found.",
+            "description": "While its bullion is still in stock. The old gold returns, unmelted.\n\n**Permission:** `oldgold.melt`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled.\n- `422` — Bullion already used.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"open\",\n  \"output_weight\": \"10.000\",\n  \"output_purity_percent\": \"8\",\n  \"refining_charge\": \"text\",\n  \"assay_certificate_number\": \"text\"\n}",
+              "raw": "{\n  \"reason\": \"Reason for the change\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "POST oldgold/melt-batches/:id/receive",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/oldgold/melt-batches/{{id}}/receive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oldgold",
+                "melt-batches",
+                "{{id}}",
+                "receive"
+              ],
+              "query": []
+            },
+            "description": "What came back from the refiner (bullion item, purity, weight, assay) and the refining charge, which is owed to the refiner.\n\n**Permission:** `oldgold.melt`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The batch.\n- `422` — Not at a refiner, or output checks.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outputItemId\": \"{{outputItemId}}\",\n  \"outputPurityId\": \"{{outputPurityId}}\",\n  \"outputWeight\": \"10.000\",\n  \"assayPercent\": \"8\",\n  \"locationId\": \"{{locationId}}\",\n  \"refiningCharge\": \"text\",\n  \"certificateNumber\": \"text\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST oldgold/quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/oldgold/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oldgold",
+                "quote"
+              ],
+              "query": []
+            },
+            "description": "The same valuation an intake saves, from Old Gold settings: fine or purity basis, rate, margin, melting loss, own-jewellery terms. Nothing is saved.\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Each article’s net, fine, rate and value, and the totals.\n- `422` — A rate or purity is missing, or an own piece is not a sold piece.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    {\n      \"description\": \"text\",\n      \"metalId\": \"{{metalId}}\",\n      \"itemCategoryId\": \"{{itemCategoryId}}\",\n      \"grossWeight\": \"10.000\",\n      \"stoneWeight\": \"10.000\",\n      \"dirtWeight\": \"10.000\",\n      \"testMethod\": \"xrf\",\n      \"testedPurityPercent\": \"8\",\n      \"declaredPurityPercent\": \"8\",\n      \"testInstrument\": \"text\",\n      \"huid\": \"{{huid}}\",\n      \"ownPiece\": \"text\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET oldgold/register",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/oldgold/register?",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oldgold",
+                "register"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{today}}",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "to",
+                  "value": "{{today}}",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Every article taken in between two dates, with the customer, identity proof, weights, purity, value and how it was settled. The Register tab chooses and orders the columns.\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Rows in date order (up to 5,000)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET oldgold/settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/oldgold/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oldgold",
+                "settings"
+              ],
+              "query": []
+            },
+            "description": "Valuation basis, rate source, margin, melting loss, estimate, buyback, cash limit, own-jewellery terms, identity rules, hold days and register columns. Read-only here; changed in Settings.\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The settings."
+          },
+          "response": []
+        },
+        {
+          "name": "GET oldgold/stock",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/oldgold/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "oldgold",
+                "stock"
+              ],
+              "query": [
+                {
+                  "key": "metalId",
+                  "value": "{{metalId}}",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Old gold waiting to be melted, and at refiners\n\n**Permission:** `oldgold.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Totals per metal, the articles still unmelted (oldest first), and batches at refiners."
           },
           "response": []
         }
@@ -7945,6 +8728,880 @@
                 }
               }
             }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "purchase",
+      "description": "",
+      "item": [
+        {
+          "name": "GET purchase/bills",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/bills",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "bills"
+              ],
+              "query": [
+                {
+                  "key": "supplierId",
+                  "value": "{{supplierId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "status",
+                  "value": "posted",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Supplier bills\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/bills",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/bills",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "bills"
+              ],
+              "query": []
+            },
+            "description": "Covers one or more unbilled inwards of the supplier. GST is worked out from each line’s HSN; send `gstAmount` to match the printed bill exactly.\n\n**Permission:** `pos.purchase.post`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The bill.\n- `422` — Already billed, other supplier, or bill number already entered.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierInvoiceNumber\": \"text\",\n  \"supplierInvoiceDate\": \"{{today}}\",\n  \"dueDate\": \"{{today}}\",\n  \"gstAmount\": \"6500.00\",\n  \"supplierId\": \"{{supplierId}}\",\n  \"inwardIds\": [\n    \"{{id}}\"\n  ],\n  \"docDate\": \"{{today}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/bills/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/bills/{{id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "bills",
+                "{{id}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "The GST entry reverses and its inwards become unbilled again.\n\n**Permission:** `pos.purchase.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Reason for the change\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/inwards",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/inwards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "inwards"
+              ],
+              "query": [
+                {
+                  "key": "supplierId",
+                  "value": "{{supplierId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "status",
+                  "value": "posted",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "Inward number or the supplier’s bill number."
+                },
+                {
+                  "key": "unbilled",
+                  "value": "true",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "direct",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "true = direct purchases only; false = goods inwards only."
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Goods inwards and direct purchases\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/inwards",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/inwards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "inwards"
+              ],
+              "query": []
+            },
+            "description": "Posts at once: stock goes up at the location, the supplier is owed rupees and/or fine metal, and pieces wait in Tagging as a lot. Rupee basis: metal at the rate. Fine basis: fine metal owed = net × touch %; making and stones in rupees. Send `bill` when the supplier bill came with the goods; otherwise enter it later. `direct: true` is a direct purchase: the bill is required, and goods and bill are one record — cancelled together, never separately.\n\n**Permission:** `pos.purchase.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The inward, and the bill if one was sent.\n- `422` — A line is invalid (named by number), a rate is missing, or the bill number is already entered.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierId\": \"{{supplierId}}\",\n  \"docDate\": \"{{today}}\",\n  \"locationId\": \"{{locationId}}\",\n  \"purchaseOrderId\": \"{{purchaseOrderId}}\",\n  \"referenceNumber\": \"text\",\n  \"notes\": \"text\",\n  \"lines\": [\n    {\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"pieces\": 1,\n      \"grossWeight\": \"10.000\",\n      \"stoneWeight\": \"10.000\",\n      \"otherWeight\": \"10.000\",\n      \"declaredWeight\": \"10.000\",\n      \"metalBasis\": \"rupee\",\n      \"ratePerGram\": \"6500.00\",\n      \"touchPercent\": \"8\",\n      \"makingBasis\": \"per_gram\",\n      \"makingRate\": \"6500.00\"\n    }\n  ],\n  \"bill\": {\n    \"supplierInvoiceNumber\": \"text\",\n    \"supplierInvoiceDate\": \"{{today}}\",\n    \"dueDate\": \"{{today}}\",\n    \"gstAmount\": \"6500.00\"\n  },\n  \"direct\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/inwards/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/inwards/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "inwards",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "One inward with its lines and tagging progress\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The inward."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/inwards/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/inwards/{{id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "inwards",
+                "{{id}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "Only while nothing from it is tagged, returned or already sold. An inward must not be billed; a direct purchase cancels its bill with it.\n\n**Permission:** `pos.purchase.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled.\n- `422` — Billed, tagged, returned or sold.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Reason for the change\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "supplierId",
+                  "value": "{{supplierId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "status",
+                  "value": "confirmed",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Purchase orders\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first, with what has arrived so far."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/orders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "orders"
+              ],
+              "query": []
+            },
+            "description": "What was asked of the supplier. Affects nothing until goods arrive; inwards against it show what is still due.\n\n**Permission:** `pos.purchase.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierId\": \"{{supplierId}}\",\n  \"docDate\": \"{{today}}\",\n  \"expectedDate\": \"{{today}}\",\n  \"notes\": \"text\",\n  \"lines\": [\n    {\n      \"itemId\": \"{{itemId}}\",\n      \"purityId\": \"{{purityId}}\",\n      \"quantity\": 1,\n      \"grossWeight\": \"10.000\",\n      \"ratePerGram\": \"6500.00\",\n      \"notes\": \"text\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/orders/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/orders/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "orders",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "One purchase order with its lines\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The order."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/orders/:id/close",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/orders/{{id}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "orders",
+                "{{id}}",
+                "close"
+              ],
+              "query": []
+            },
+            "description": "`status: closed` when no more is coming; `cancelled` only while nothing has arrived.\n\n**Permission:** `pos.purchase.create`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The order.\n- `422` — Not open, or goods already received.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Reason for the change\",\n  \"status\": \"closed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/payables",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/payables",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "payables"
+              ],
+              "query": []
+            },
+            "description": "Rupees and fine metal per supplier, largest first.\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Suppliers with a balance."
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/returns",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/returns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "returns"
+              ],
+              "query": [
+                {
+                  "key": "supplierId",
+                  "value": "{{supplierId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Returns to suppliers\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/returns",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/returns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "returns"
+              ],
+              "query": []
+            },
+            "description": "Against one inward: tagged pieces (scanned), untagged pieces still in Tagging, or lot weight. The supplier’s rupees, fine metal and (if billed) GST come down in proportion.\n\n**Permission:** `pos.purchase.create`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The return.\n- `422` — Piece not in stock, weight above what arrived.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodsReceiptId\": \"{{goodsReceiptId}}\",\n  \"reason\": \"quality\",\n  \"notes\": \"text\",\n  \"docDate\": \"{{today}}\",\n  \"pieceIds\": [\n    \"{{id}}\"\n  ],\n  \"lines\": [\n    {\n      \"goodsReceiptLineId\": \"{{goodsReceiptLineId}}\",\n      \"pieces\": 1,\n      \"grossWeight\": \"10.000\",\n      \"netWeight\": \"10.000\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/settlements",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/settlements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "settlements"
+              ],
+              "query": [
+                {
+                  "key": "supplierId",
+                  "value": "{{supplierId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "text",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Supplier payments\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/settlements",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/settlements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "settlements"
+              ],
+              "query": []
+            },
+            "description": "`payment`: rupees by a payment method from Masters. `metal`: fine metal given from a lot in stock (item, purity, location, net weight). `rate_fix`: fine metal owed converted to rupees at an agreed rate per fine gram. Metal cannot exceed what is owed. The difference between the carrying value and the settlement is booked as metal gain or loss.\n\n**Permission:** `pos.purchase.post`\n**Auth:** shop staff token\n\n**Responses**\n- `201` — The settlement.\n- `422` — More metal than owed, or a payment limit.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierId\": \"{{supplierId}}\",\n  \"kind\": \"payment\",\n  \"docDate\": \"{{today}}\",\n  \"amount\": \"6500.00\",\n  \"paymentMethodId\": \"{{paymentMethodId}}\",\n  \"reference\": \"text\",\n  \"itemId\": \"{{itemId}}\",\n  \"purityId\": \"{{purityId}}\",\n  \"locationId\": \"{{locationId}}\",\n  \"netWeight\": \"10.000\",\n  \"metalId\": \"{{metalId}}\",\n  \"fineWeight\": \"10.000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/settlements/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/settlements/{{id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "settlements",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "One supplier payment, as it prints\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The payment voucher with the shop and the supplier."
+          },
+          "response": []
+        },
+        {
+          "name": "POST purchase/settlements/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/settlements/{{id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "settlements",
+                "{{id}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "Cancel a supplier payment\n\n**Permission:** `pos.purchase.post`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Cancelled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Reason for the change\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET purchase/suppliers/:id/balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchase/suppliers/{{id}}/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchase",
+                "suppliers",
+                "{{id}}",
+                "balance"
+              ],
+              "query": []
+            },
+            "description": "Rupees on Sundry Creditors, fine metal per metal (with its average carrying rate), and unbilled inwards.\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The balance."
           },
           "response": []
         }

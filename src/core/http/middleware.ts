@@ -150,11 +150,13 @@ export const errorHandler = (
   const pgCode = (error as { code?: string })?.code;
   const known = pgCode ? PG_MESSAGES[pgCode] : undefined;
   if (known) {
-    logger.warn({ pgCode, path: req.path, detail: (error as { detail?: string }).detail }, 'Database rejected the request');
+    const { column, table } = error as { column?: string; table?: string };
+    logger.warn({ pgCode, path: req.path, table, column, detail: (error as { detail?: string }).detail }, 'Database rejected the request');
     res.status(known.status).json({
       error: {
         code: known.code,
-        message: known.message,
+        // Name the field, so the screen (and whoever reports it) knows exactly what is missing.
+        message: pgCode === '23502' && column ? `${column.replace(/_id$/, '').replace(/_/g, ' ')} is missing${table ? ` (${table.replace(/_/g, ' ')})` : ''}.` : known.message,
         requestId: requestIdValue,
         ...(isProduction ? {} : { detail: (error as { detail?: string }).detail }),
       },

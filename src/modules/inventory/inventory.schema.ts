@@ -13,6 +13,9 @@
 import { defineTable } from '../../core/db/schema/registry.js';
 import { col } from '../../core/db/schema/columns.js';
 
+/** How the making written on a tag is charged: per gram of metal, per piece, or a % of the metal value. */
+export const TAG_MAKING_BASES = ['per_gram', 'flat', 'percent'] as const;
+
 export const PIECE_STATUSES = [
   'in_stock',
   'on_memo',
@@ -52,6 +55,11 @@ export const stockPieceTable = defineTable({
     making_cost: col.money({ notNull: true, default: '0' }),
     stone_cost: col.money({ notNull: true, default: '0' }),
 
+    /** Selling terms written on the tag. When set they win over Masters → Formulas at the counter; blank means the formula applies. */
+    making_basis: col.enum(TAG_MAKING_BASES),
+    making_rate: col.rate({ comment: '₹/g, ₹/piece or % of metal value, per making_basis.' }),
+    wastage_percent: col.rate({ comment: '% of net weight charged as extra metal at the day rate.' }),
+
     design_id: col.uuid({ comment: 'Filled in once Module 2 exists.' }),
     supplier_id: col.fk('party'),
     received_at: col.timestamptz({ notNull: true, default: 'now()' }),
@@ -59,6 +67,8 @@ export const stockPieceTable = defineTable({
     /** Days in stock is the single most useful retail number; derived from received_at. */
     image_urls: col.jsonb({ notNull: true, default: "'[]'::jsonb" }),
     attributes: col.jsonb({ notNull: true, default: "'{}'::jsonb" }),
+    /** The purchase lot this piece was tagged from, which says whose it was and on what terms. */
+    tagging_lot_id: col.fk('tagging_lot'),
     /** Null = still in the print queue. */
     label_printed_at: col.timestamptz(),
     label_print_count: col.int({ notNull: true, default: '0' }),
@@ -76,6 +86,39 @@ export const stockPieceTable = defineTable({
     { name: 'gx_stock_piece_tag_trgm', columns: ['tag_number'], method: 'gin', opclass: 'gin_trgm_ops', global: true },
     { name: 'gx_stock_piece_huid_trgm', columns: ['huid'], method: 'gin', opclass: 'gin_trgm_ops', global: true },
   ],
+});
+
+/**
+ * Pieces bought but not yet tagged — "12 rings, 84.500 g" from one inward line.
+ * Their weight and cost are already in stock (the inward raised them); Tagging
+ * turns them into pieces one by one, each taking its share of the cost by
+ * weight. Closing the lot posts any small weighing difference as an adjustment.
+ */
+export const taggingLotTable = defineTable({
+  name: 'tagging_lot',
+  module: 'inventory',
+  columns: {
+    goods_receipt_line_id: col.fk('goods_receipt_line', { notNull: true }),
+    branch_id: col.fk('branch', { notNull: true }),
+    location_id: col.fk('stock_location', { notNull: true }),
+    item_id: col.fk('item', { notNull: true }),
+    purity_id: col.fk('purity', { notNull: true }),
+    supplier_id: col.fk('party', { notNull: true }),
+    pieces_expected: col.int({ notNull: true }),
+    gross_expected: col.weight({ notNull: true }),
+    net_expected: col.weight({ notNull: true }),
+    fine_expected: col.weight({ notNull: true }),
+    cost_value: col.money({ notNull: true, default: '0' }),
+    pieces_tagged: col.int({ notNull: true, default: '0' }),
+    gross_tagged: col.weight({ notNull: true, default: '0' }),
+    net_tagged: col.weight({ notNull: true, default: '0' }),
+    fine_tagged: col.weight({ notNull: true, default: '0' }),
+    cost_tagged: col.money({ notNull: true, default: '0' }),
+    status: col.enum(['open', 'closed'], { notNull: true, default: "'open'" }),
+    closed_at: col.timestamptz(),
+    close_note: col.text(),
+  },
+  indexes: [{ columns: ['status', 'branch_id'] }, { columns: ['goods_receipt_line_id'] }],
 });
 
 /**
@@ -122,7 +165,7 @@ export const stockTransferLineTable = defineTable({
   indexes: [{ columns: ['stock_transfer_id'] }],
 });
 
-export const ADJUSTMENT_REASONS = ['shortage', 'damage', 'loss', 'write_off', 'found', 'weighing_correction', 'stock_count'] as const;
+export const ADJUSTMENT_REASONS = ['shortage', 'damage', 'loss', 'write_off', 'found', 'weighing_correction', 'stock_count', 'tagging_difference'] as const;
 
 /** A stock correction. Its movements are its lines; posting is final. */
 export const stockAdjustmentTable = defineTable({
@@ -197,9 +240,11 @@ export const MOVEMENT_REASONS = [
   'production_receipt',
   'old_gold_intake',
   'melting',
+  'refining',
   'adjustment',
   'memo_out',
   'memo_in',
+  'metal_payment',
 ] as const;
 
 export const stockMovementTable = defineTable({

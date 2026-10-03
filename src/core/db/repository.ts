@@ -77,7 +77,9 @@ export function repo<T extends QueryResultRow = QueryResultRow>(tx: Tx, table: s
           params,
         )));
       }
-      return inserted;
+      // Callers pair results with their input by position; RETURNING order is not promised, the ids are.
+      const byId = new Map(inserted.map((r) => [(r as Row).id, r]));
+      return prepared.map((p) => byId.get(p.id)!);
     },
 
     async update(id: string, values: Row): Promise<T> {

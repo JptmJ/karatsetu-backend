@@ -145,13 +145,11 @@ defineCrud({
       .describe('piece = individually tagged and counted. lot = bulk metal, measured in grams only.'),
     category_id: uuid.optional(), metal_id: uuid.optional(), default_purity_id: uuid.optional(),
     hsn_code: z.string().optional().describe('7113 for jewellery articles.'),
-    default_making_rate: decimal.optional(), default_wastage_percent: decimal.optional(),
     uom: z.enum(['gram', 'piece', 'carat', 'millilitre']).default('gram'),
   }),
   updateSchema: z.object({
     name: z.string().min(1).optional(), category_id: uuid.nullish(), default_purity_id: uuid.nullish(),
-    hsn_code: z.string().nullish(), default_making_rate: decimal.nullish(),
-    default_wastage_percent: decimal.nullish(), is_active: z.boolean().optional(),
+    hsn_code: z.string().nullish(), is_active: z.boolean().optional(),
   }),
 });
 
