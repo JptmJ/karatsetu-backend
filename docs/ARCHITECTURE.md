@@ -157,8 +157,8 @@ becomes `['tenant_id', 'doc_number']`. Otherwise the first tenant to use
 | `safe` | Apply additive changes, block destructive ones | **Development** (default) |
 | `force` | Apply everything, including drops | A throwaway database only |
 
-`npm run db:plan` shows what *would* change without touching anything. Run it
-before every deploy.
+`npm run db:migrate -- --dry-run` shows what *would* change without touching
+anything. Run it before every deploy.
 
 ### Actual output from this repository
 
@@ -476,16 +476,15 @@ Flagging these now because they are cheap to change today and expensive later.
 ```bash
 npm install
 cp .env.example .env        # paste your connection string
-npm run db:plan             # what would change?
-npm run db:sync             # apply it
-npm run db:seed             # a demo tenant to log into
+npm run db:migrate          # make the tables match the code
+npm run seed:superadmin -- --password='...'
+npm run db:seed             # demo tenants to log into
 npm run dev
 ```
 
 | Command | What it does |
 |---|---|
-| `npm run db:plan` | Shows pending changes. Touches nothing. `SHOW_SQL=true` prints the SQL. |
-| `npm run db:sync` | Applies them without starting the server. |
-| `npm run db:seed` | Creates a tenant with accounts, purities, branch, locations, roles and an owner login. |
+| `npm run db:migrate` | Lists the differences, then applies the safe ones. `-- --dry-run` touches nothing; `SHOW_SQL=true` prints the SQL. |
+| `npm run db:seed` | Creates demo tenants through the super admin's provisioning: branches, owner, an admin and a sales user per branch, and sample data. |
 | `npm run dev` | Syncs the schema, then serves on :4000. |
 | `npm test` | 30 tests — decimal maths, pricing, financial year, permissions, schema diff safety. |

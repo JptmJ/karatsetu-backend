@@ -224,7 +224,7 @@ async function applyChange(client: PoolClient, change: SchemaChange, appVersion:
   }
 }
 
-/** Read-only: what WOULD change. Used by `npm run db:plan`. */
+/** Read-only: what WOULD change. Used by `npm run db:migrate`. */
 export async function planSchema(pool: Pool): Promise<SchemaChange[]> {
   const client = await pool.connect();
   try {

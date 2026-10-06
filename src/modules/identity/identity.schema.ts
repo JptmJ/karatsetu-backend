@@ -51,8 +51,7 @@ export const userTable = defineTable({
  *
  * They were built for tenant-definable, multi-role users. Neither is true any
  * more: the set is fixed in code and a person holds exactly one role, so the
- * role now sits on `app_user` and those two tables were dropped by
- * `npm run migrate:roles`.
+ * role now sits on `app_user` and those two tables were dropped.
  */
 
 export const refreshTokenTable = defineTable({

@@ -12,8 +12,9 @@ See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for how it is built and why
 ```bash
 npm install
 cp .env.example .env      # paste your DATABASE_URL
-npm run db:sync           # create/update the tables
-npm run db:seed           # a demo tenant you can log into
+npm run db:migrate        # create/update the tables
+npm run seed:superadmin -- --password='...'   # the one super admin
+npm run db:seed           # demo tenants you can log into
 npm run dev
 ```
 
@@ -46,9 +47,9 @@ Postgres 15 or newer (uses `UNIQUE NULLS NOT DISTINCT`).
 | Command | What it does |
 |---|---|
 | `npm run dev` | Sync the schema, then serve on :4000 with reload |
-| `npm run db:plan` | Show what the next boot would change. Changes nothing. |
-| `npm run db:sync` | Apply schema changes without starting the server |
-| `npm run db:seed` | Create a demo tenant (`-- --code=x --email=y --password=z`) |
+| `npm run db:migrate` | Make the tables match the code. `-- --dry-run` only shows the changes; `-- --force` also applies blocked (data-deleting) ones |
+| `npm run seed:superadmin` | Create or reset the super admin (`-- --password=...`) |
+| `npm run db:seed` | Create demo tenants with branches, users and data (`-- --fresh` recreates them). Needs the super admin first |
 | `npm test` | Run the test suite |
 | `npm run typecheck` | Type-check without emitting |
 | `npm run build` | Compile to `dist/` |

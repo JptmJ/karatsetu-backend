@@ -1,7 +1,7 @@
 import express from 'express';
 import { pinoHttp } from 'pino-http';
 import { logger } from './core/util/logger.js';
-import { authenticate, authenticatePlatform, errorHandler, requestId } from './core/http/middleware.js';
+import { authenticate, authenticatePlatform, cors, errorHandler, requestId } from './core/http/middleware.js';
 import { pool } from './core/db/pool.js';
 import { isProduction } from './core/config/env.js';
 import { buildRouter } from './api/index.js';
@@ -15,10 +15,10 @@ export function createApp() {
   const app = express();
 
   app.disable('x-powered-by');
-  // The app reaches this API through its own origin (Vite proxy, or the
-  // frontend host's rewrite), so no CORS is needed and the client IP arrives
-  // in X-Forwarded-For.
+  // Behind a proxy (nginx, a rewrite) the client IP arrives in X-Forwarded-For.
   app.set('trust proxy', isProduction);
+  // Only for apps on another origin (see CORS_ORIGINS); same-origin calls skip it.
+  app.use(cors);
   app.use(express.json({ limit: '4mb' }));
   app.use(requestId);
 

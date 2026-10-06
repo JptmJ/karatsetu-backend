@@ -30,15 +30,15 @@ export interface ProvisionInput {
 export async function provisionTenant(
   tx: Tx,
   tenantId: string,
-  options: { legalName: string; displayName?: string; stateCode?: string; kind?: TenantKind; firstBranch?: { code: string; name: string; kind?: 'showroom' | 'factory' | 'warehouse' | 'office' } },
+  options: { legalName: string; displayName?: string; stateCode?: string; gstin?: string; kind?: TenantKind; firstBranch?: ProvisionInput['firstBranch'] },
 ): Promise<{ branchId: string }>;
 export async function provisionTenant(input: ProvisionInput): Promise<{
   tenantId: string; branchId: string; ownerUserId: string;
 }>;
 export async function provisionTenant(
   first: Tx | ProvisionInput,
-  second?: string | { legalName: string; displayName?: string; stateCode?: string; kind?: TenantKind },
-  third?: { legalName: string; displayName?: string; stateCode?: string; kind?: TenantKind },
+  second?: string | { legalName: string; displayName?: string; stateCode?: string; gstin?: string; kind?: TenantKind; firstBranch?: ProvisionInput['firstBranch'] },
+  third?: { legalName: string; displayName?: string; stateCode?: string; gstin?: string; kind?: TenantKind; firstBranch?: ProvisionInput['firstBranch'] },
 ): Promise<{ branchId: string; tenantId?: string; ownerUserId?: string }> {
   if ('context' in first) {
     const tx = first as Tx;
@@ -50,7 +50,9 @@ export async function provisionTenant(
       legalName: options.legalName,
       displayName: options.displayName,
       kind,
+      gstin: options.gstin,
       stateCode: options.stateCode,
+      firstBranch: options.firstBranch,
       owner: { email: '', fullName: '', password: '' },
     });
     await createAccounts(tx);

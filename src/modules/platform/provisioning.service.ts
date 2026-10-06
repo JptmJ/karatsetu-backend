@@ -73,7 +73,9 @@ export async function createTenant(input: CreateTenantInput, actorId: string, ip
       const prov = await provisionTenant(ttx, tenant.id as string, {
         legalName: input.legalName,
         displayName: input.displayName,
-        stateCode: input.stateCode,
+        stateCode: input.branch?.stateCode ?? input.stateCode,
+        gstin: input.gstin,
+        kind: input.kind,
         firstBranch: input.branch ? { code: input.branch.code, name: input.branch.name, kind: input.branch.kind } : undefined,
       });
       branchId = prov.branchId;
