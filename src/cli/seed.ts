@@ -1,34 +1,48 @@
 /**
- * `npm run db:seed` — a working demo tenant with realistic data.
+ * `npm run db:seed` — demo businesses with realistic data, for local testing.
  *
- * The names, karigars, categories and themes mirror the Swarnay frontend's
- * mock data, so the two line up while the UI is still being wired across.
+ *   npm run db:seed                -- create the demo tenants (skips ones that exist)
+ *   npm run db:seed -- --fresh     -- delete the demo tenants first, then create them again
  *
- *   npm run db:seed                 -- both demo tenants
- *   npm run db:seed -- --fresh      -- wipe demo data first
+ * It builds each tenant exactly the way the super admin panel does:
+ *
+ *   Super Admin ──► Tenant ──► Branches ──► Users (owner, one admin + one sales per branch)
+ *
+ * so the demo data always has the same shape as real data. Run
+ * `npm run seed:superadmin` once before this — every tenant is created by the
+ * super admin, and this script refuses to run without one.
+ *
+ * Never point this at production: --fresh deletes data.
  */
 import '../bootstrap.js';
 import { closePool, checkConnection, pool } from '../core/db/pool.js';
 import { asPlatform, asTenant } from '../core/db/client.js';
 import { syncSchema } from '../core/db/schema/sync.js';
-import { provisionTenant } from '../modules/tenancy/provisioning.service.js';
+import { isProduction } from '../core/config/env.js';
+import { createBranch, createTenant, createTenantUser } from '../modules/platform/provisioning.service.js';
 import { createOrder } from '../modules/orders/orders.service.js';
 import { checkout } from '../modules/sales/sales.service.js';
 import { createInward } from '../modules/purchase/purchase.service.js';
 import { repo } from '../core/db/repository.js';
-import { newId } from '../core/util/id.js';
 import { logger } from '../core/util/logger.js';
 import type { Tx } from '../core/db/client.js';
+import type { TenantKind } from '../modules/tenancy/module-catalog.js';
 
 const has = (flag: string): boolean => process.argv.includes(`--${flag}`);
 const today = () => new Date().toISOString().slice(0, 10);
 const daysAway = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
+/** Every demo login uses this password. */
+const DEMO_PASSWORD = 'demo12345';
+
+interface BranchSeed { code: string; name: string; city: string; state: string; stateCode: string }
+
 interface TenantSeed {
   code: string; legalName: string; displayName: string;
-  kind: 'retailer' | 'manufacturer' | 'both';
+  kind: TenantKind;
   stateCode: string; gstin: string;
-  branches: Array<{ code: string; name: string; city: string; state: string; stateCode: string }>;
+  /** The first branch is the head office. */
+  branches: BranchSeed[];
   theme: string;
 }
 
@@ -81,35 +95,59 @@ const SUPPLIERS = [
   { code: 'S-002', name: 'Mumbai Bullion Traders', city: 'Mumbai', stateCode: '27', gstin: '27AABCU9603R1ZM' },
 ];
 
-async function seedTenant(seed: TenantSeed, password: string) {
-  const email = `owner@${seed.code}.test`;
-  const { tenantId, branchId } = await provisionTenant({
+interface Login { email: string; role: string; branch: string }
+
+/**
+ * Step 1 — the tenant, its branches and its people, created through the same
+ * service functions the super admin's API calls.
+ */
+async function createDemoTenant(seed: TenantSeed, superAdminId: string) {
+  const [head, ...others] = seed.branches;
+  const logins: Login[] = [];
+
+  // The tenant comes with its head-office branch, roles, accounts, purities and the owner.
+  const ownerEmail = `owner@${seed.code}.test`;
+  const { tenantId, branchId } = await createTenant({
     code: seed.code, legalName: seed.legalName, displayName: seed.displayName,
     kind: seed.kind, gstin: seed.gstin, stateCode: seed.stateCode,
-    owner: { email, fullName: `${seed.displayName} Owner`, password },
-    firstBranch: { code: seed.branches[0]!.code, name: seed.branches[0]!.name, kind: 'showroom' },
+    admin: { email: ownerEmail, fullName: `${seed.displayName} Owner`, password: DEMO_PASSWORD },
+    branch: { code: head!.code, name: head!.name, city: head!.city, state: head!.state, stateCode: head!.stateCode, kind: 'showroom' },
+  }, superAdminId);
+  logins.push({ email: ownerEmail, role: 'owner', branch: 'all branches' });
+
+  const branches = [{ ...head!, id: branchId as string }];
+  for (const b of others) {
+    const created = await createBranch(tenantId as string, {
+      code: b.code, name: b.name, kind: 'showroom', city: b.city, state: b.state, stateCode: b.stateCode, gstin: seed.gstin,
+    }, superAdminId);
+    branches.push({ ...b, id: created.id as string });
+  }
+
+  // Every branch gets one admin and one sales executive.
+  for (const b of branches) {
+    for (const role of ['admin', 'sales'] as const) {
+      const email = `${role}.${b.code.toLowerCase()}@${seed.code}.test`;
+      await createTenantUser(tenantId as string, {
+        email, fullName: `${b.name} ${role === 'admin' ? 'Admin' : 'Sales'}`,
+        password: DEMO_PASSWORD, roleCode: role, branchId: b.id,
+      }, { actorPlatformUserId: superAdminId });
+      logins.push({ email, role, branch: b.code });
+    }
+  }
+
+  await asTenant(tenantId as string, async (tx) => {
+    // Real users must change their password at first sign-in; demo users shouldn't have to.
+    await tx.query(`update app_user set must_change_password = false`);
+    await tx.query(`update tenant_theme set preset_key = $1`, [seed.theme]);
   });
 
+  logger.info({ tenant: seed.code, branches: branches.length, users: logins.length }, 'tenant, branches and users created');
+  return { tenantId: tenantId as string, headBranchId: branchId as string, logins };
+}
+
+/** Step 2 — masters: categories, karigars, customers, suppliers, rates, items, a scheme. */
+async function seedMasters(tenantId: string, seed: TenantSeed) {
   await asTenant(tenantId, async (tx) => {
-    await tx.query(`update tenant_theme set preset_key = $1 where tenant_id = $2`, [seed.theme, tenantId]);
-    await tx.query(
-      `update branch set city = $2, state = $3, state_code = $4 where id = $1`,
-      [branchId, seed.branches[0]!.city, seed.branches[0]!.state, seed.branches[0]!.stateCode]);
-
-    // extra branches + their locations
-    for (const b of seed.branches.slice(1)) {
-      const id = newId();
-      await repo(tx, 'branch').insert({
-        id, code: b.code, name: b.name, kind: 'showroom', city: b.city,
-        state: b.state, state_code: b.stateCode, gstin: seed.gstin, is_active: true,
-      });
-      for (const loc of [
-        { code: 'COUNTER', name: 'Counter 1 (Bridal)', kind: 'counter', is_default: true },
-        { code: 'VAULT', name: 'Vault A (High Security)', kind: 'vault', is_default: false },
-        { code: 'WINDOW', name: 'Window Display', kind: 'window', is_default: false },
-      ]) await repo(tx, 'stock_location').insert({ branch_id: id, ...loc, is_active: true });
-    }
-
     const categories = new Map<string, string>();
     for (const [i, c] of CATEGORIES.entries()) {
       const row = await repo(tx, 'item_category').insert({ code: c.code, name: c.name, hsn_code: c.hsn, sort_order: i });
@@ -191,10 +229,7 @@ async function seedTenant(seed: TenantSeed, password: string) {
     });
 
     logger.info({ tenant: seed.code }, 'masters seeded');
-    return { parties, items, purities: { p22, p18, p999 }, gold, categories };
   });
-
-  return { tenantId, branchId, email };
 }
 
 /** Buy bulk metal, tag a few pieces, raise orders, and bill one sale. */
@@ -314,61 +349,105 @@ async function seedTransactions(tenantId: string, branchId: string) {
   });
 }
 
-async function wipeDemoData(): Promise<void> {
+/**
+ * Deletes the demo tenants and everything that belongs to them.
+ *
+ * Rather than keeping a hand-written list of tables in the right order, it
+ * finds every table with a `tenant_id` and keeps deleting: a table that still
+ * has rows pointing at it fails this pass and succeeds on a later one, once its
+ * children are gone. Each delete runs inside a savepoint so one failure doesn't
+ * abort the whole transaction.
+ */
+async function wipeDemoTenants(): Promise<void> {
   await asPlatform(async (tx) => {
     const codes = TENANTS.map((t) => t.code);
     const rows = await tx.query<{ id: string }>(`select id from tenant where code = any($1::text[])`, [codes]);
     if (!rows.length) return;
     const ids = rows.map((r) => r.id);
-    // Child-first, so foreign keys never block the delete.
-    const order = [
-      'order_communication', 'order_acknowledgement', 'order_attachment', 'order_payment',
-      'order_stage_event', 'order_line', 'retail_order', 'order_pipeline',
-      'approval_memo_line', 'approval_memo', 'customer_receipt',
-      'sales_payment', 'sales_return_line', 'sales_return', 'sales_invoice_line', 'sales_invoice',
-      'supplier_settlement', 'purchase_return_line', 'purchase_return', 'tagging_lot',
-      'goods_receipt_line', 'goods_receipt', 'purchase_invoice', 'purchase_order_line', 'purchase_order',
-      'girvi_repayment', 'girvi_accrual', 'girvi_collateral', 'girvi_loan',
-      'scheme_redemption', 'scheme_installment', 'scheme_account', 'scheme_plan',
-      'old_gold_payout', 'old_gold_item', 'old_gold_intake', 'melt_batch',
-      'tag_print_job_item', 'tag_print_job', 'huid_assignment', 'tag_template',
-      'metal_ledger_entry', 'ledger_entry', 'voucher',
-      'karigar_ledger', 'karigar',
-      'stock_movement', 'stock_balance', 'stock_piece',
-      'metal_rate', 'price_rule', 'item', 'item_category', 'purity', 'metal', 'party',
-      'numbering_gap', 'numbering_series', 'config_value', 'dashboard_layout',
-      'audit_log', 'refresh_token', 'user_role', 'role_permission', 'role', 'app_user',
-      'tenant_theme', 'stock_location', 'branch', 'account', 'tenant_module',
-    ];
-    for (const table of order) {
-      await tx.query(`delete from ${table} where tenant_id = any($1::uuid[])`, [ids]).catch(() => undefined);
+
+    const tables = await tx.query<{ table_name: string }>(
+      `select table_name from information_schema.columns
+        where table_schema = current_schema() and column_name = 'tenant_id' and table_name <> 'tenant'`);
+    let remaining = tables.map((t) => t.table_name);
+
+    for (let pass = 1; remaining.length > 0; pass++) {
+      const failed: string[] = [];
+      for (const table of remaining) {
+        await tx.query('savepoint wipe');
+        try {
+          await tx.query(`delete from "${table}" where tenant_id = any($1::uuid[])`, [ids]);
+          await tx.query('release savepoint wipe');
+        } catch {
+          await tx.query('rollback to savepoint wipe');
+          failed.push(table);
+        }
+      }
+      if (failed.length === remaining.length) {
+        throw new Error(`Could not delete demo data from: ${failed.join(', ')}`);
+      }
+      remaining = failed;
     }
-    await tx.query(`delete from support_session where tenant_id = any($1::uuid[])`, [ids]).catch(() => undefined);
+
+    await tx.query(`delete from platform_audit_log where target_tenant_id = any($1::uuid[])`, [ids]);
     await tx.query(`delete from tenant where id = any($1::uuid[])`, [ids]);
-    logger.warn({ tenants: codes }, 'demo data wiped');
+    logger.warn({ tenants: codes }, 'demo tenants deleted');
   });
 }
 
 async function main(): Promise<void> {
-  await checkConnection();
-  await syncSchema(pool, 'safe');
-  if (has('fresh')) await wipeDemoData();
-
-  const password = 'demo12345';
-  const created: Array<{ code: string; email: string }> = [];
-
-  for (const seed of TENANTS) {
-    const { tenantId, branchId, email } = await seedTenant(seed, password);
-    await seedTransactions(tenantId, branchId);
-    created.push({ code: seed.code, email });
+  if (isProduction) {
+    console.error('\nRefusing to seed demo data while NODE_ENV=production.\n');
+    process.exitCode = 1;
+    return;
   }
 
+  await checkConnection();
+  await syncSchema(pool, 'safe');
+
+  const superAdmin = await asPlatform((tx) => tx.maybeOne<{ id: string }>(
+    `select id from platform_user where is_active = true and deleted_at is null order by created_at limit 1`));
+  if (!superAdmin) {
+    console.error(`
+There is no super admin yet, and every tenant is created by one. Run this first:
+
+  npm run seed:superadmin -- --password='...'
+`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (has('fresh')) await wipeDemoTenants();
+
+  const existing = await asPlatform((tx) => tx.query<{ code: string }>(
+    `select code from tenant where code = any($1::text[]) and deleted_at is null`, [TENANTS.map((t) => t.code)]));
+  const skip = new Set(existing.map((r) => r.code));
+
+  const logins: Array<Login & { tenant: string }> = [];
+  for (const seed of TENANTS) {
+    if (skip.has(seed.code)) {
+      console.log(`  ${seed.code}: already exists — skipped (use --fresh to recreate it)`);
+      continue;
+    }
+    const { tenantId, headBranchId, logins: created } = await createDemoTenant(seed, superAdmin.id);
+    await seedMasters(tenantId, seed);
+    await seedTransactions(tenantId, headBranchId);
+    logins.push(...created.map((l) => ({ ...l, tenant: seed.code })));
+  }
+
+  if (!logins.length) {
+    console.log('\nNothing new to create.\n');
+    return;
+  }
+
+  const first = logins[0]!;
   console.log(`
-Demo tenants ready.
-${created.map((c) => `  ${c.code.padEnd(10)} ${c.email}   password: ${password}`).join('\n')}
+Demo tenants ready. Every password is ${DEMO_PASSWORD}
+
+  ${'tenant'.padEnd(10)} ${'role'.padEnd(7)} ${'branch'.padEnd(14)} email
+${logins.map((l) => `  ${l.tenant.padEnd(10)} ${l.role.padEnd(7)} ${l.branch.padEnd(14)} ${l.email}`).join('\n')}
 
   curl -s localhost:4000/api/auth/login -H 'content-type: application/json' \\
-    -d '{"tenantCode":"${created[0]!.code}","identifier":"${created[0]!.email}","password":"${password}"}'
+    -d '{"tenantCode":"${first.tenant}","identifier":"${first.email}","password":"${DEMO_PASSWORD}"}'
 
   Docs: http://localhost:4000/dev-docs
 `);

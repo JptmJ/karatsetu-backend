@@ -44,20 +44,91 @@ pool.on('connect', (client) => {
   client.on('error', (error) => logger.error({ err: error }, 'Database connection dropped'));
 });
 
-export async function checkConnection(): Promise<void> {
-  const client = await pool.connect();
+/**
+ * Where DATABASE_URL points, with the password left out — safe to log. When the
+ * URL can't be parsed, node-pg will refuse it anyway; say so rather than guess.
+ */
+export function databaseTarget(): { host: string; port: string; database: string; user: string } {
   try {
-    const { rows } = await client.query<{ version: string; db: string; usr: string }>(
-      `select version() as version, current_database() as db, current_user as usr`,
+    const url = new URL(env.DATABASE_URL);
+    return {
+      host: url.hostname,
+      port: url.port || '5432',
+      database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+      user: decodeURIComponent(url.username),
+    };
+  } catch {
+    return { host: 'unparseable DATABASE_URL', port: '?', database: '?', user: '?' };
+  }
+}
+
+export async function checkConnection(): Promise<void> {
+  const target = databaseTarget();
+  const started = Date.now();
+  logger.info({ ...target, ssl: env.DATABASE_SSL, schema: env.DATABASE_SCHEMA }, 'Connecting to Postgres…');
+
+  let client: pg.PoolClient;
+  try {
+    client = await pool.connect();
+  } catch (error) {
+    logger.fatal({ err: error, ...target }, `Database NOT connected — could not reach ${target.host}:${target.port}/${target.database}`);
+    throw error;
+  }
+
+  try {
+    const { rows } = await client.query<{ version: string; db: string; usr: string; addr: string | null }>(
+      `select version() as version, current_database() as db, current_user as usr, inet_server_addr()::text as addr`,
     );
     const row = rows[0]!;
     logger.info(
-      { database: row.db, user: row.usr, version: row.version.split(',')[0] },
-      'Connected to Postgres',
+      {
+        host: target.host,
+        serverAddress: row.addr,
+        port: target.port,
+        database: row.db,
+        user: row.usr,
+        schema: env.DATABASE_SCHEMA,
+        version: row.version.split(',')[0],
+        latencyMs: Date.now() - started,
+      },
+      `Database connected ✔ ${row.db} on ${target.host}:${target.port}`,
     );
   } finally {
     client.release();
   }
+}
+
+/**
+ * Re-verifies the database on a timer so the log always says whether it is
+ * still reachable: one line per check while healthy, an error when a check
+ * fails, and a "restored" line when it comes back.
+ */
+let heartbeat: NodeJS.Timeout | null = null;
+
+export function startDbHeartbeat(intervalSeconds: number): void {
+  if (intervalSeconds <= 0 || heartbeat) return;
+  const { host, port, database } = databaseTarget();
+  let healthy = true;
+
+  heartbeat = setInterval(async () => {
+    const started = Date.now();
+    try {
+      await pool.query('select 1');
+      const latencyMs = Date.now() - started;
+      if (!healthy) logger.info({ database, host, latencyMs }, `Database connection restored ✔ ${database} on ${host}:${port}`);
+      else logger.info({ database, host, latencyMs, poolTotal: pool.totalCount, poolIdle: pool.idleCount }, `Database verified ✔ ${database}`);
+      healthy = true;
+    } catch (error) {
+      logger.error({ err: error, database, host }, `Database check FAILED ✘ ${database} on ${host}:${port}`);
+      healthy = false;
+    }
+  }, intervalSeconds * 1000);
+  heartbeat.unref();
+}
+
+export function stopDbHeartbeat(): void {
+  if (heartbeat) clearInterval(heartbeat);
+  heartbeat = null;
 }
 
 export async function closePool(): Promise<void> {

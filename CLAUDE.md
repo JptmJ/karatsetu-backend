@@ -88,11 +88,11 @@ file *is* the change the frontend needs.
 ### 6. Verify before declaring done
 
 ```bash
-npm run typecheck && npm test && npm run db:plan
+npm run typecheck && npm test && npm run db:migrate -- --dry-run
 ```
 
-`db:plan` must end with **"The database already matches"** — if it shows pending
-changes, run `npm run db:sync` and check the result.
+The dry run must end with **"The database already matches"** — if it shows
+pending changes, run `npm run db:migrate` and check the result.
 
 ---
 
@@ -182,8 +182,7 @@ waiting. *"Not enough stock. Available: 80g — tried to remove 200g."* — not
 
 ```bash
 npm run dev          # sync schema, then serve on :4000
-npm run db:plan      # what would change? touches nothing
-npm run db:sync      # apply it
+npm run db:migrate   # make the tables match the code (-- --dry-run to only look)
 npm run db:seed      # demo tenants (--fresh wipes first)
 npm run gen:client   # regenerate the frontend client
 npm test             # unit tests

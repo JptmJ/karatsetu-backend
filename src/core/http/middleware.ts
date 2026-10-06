@@ -8,7 +8,7 @@ import { verifyAccessToken } from '../../modules/identity/auth.service.js';
 import { verifyPlatformToken } from '../../modules/platform/platform-auth.service.js';
 import { hasPermission } from '../../modules/identity/permissions.js';
 import { logger } from '../util/logger.js';
-import { isProduction } from '../config/env.js';
+import { env, isProduction } from '../config/env.js';
 
 import { effectiveGrants, getUserAccess, resolveBranch, type UserAccess } from '../../modules/identity/access.service.js';
 import { assertCanWrite, loadLiveSession, supportAccess } from '../../modules/platform/support-session.service.js';
@@ -23,6 +23,29 @@ declare module 'express-serve-static-core' {
 }
 
 /** Gives every request an id, so a log line can be traced back to one call. */
+/**
+ * Lets the web apps listed in CORS_ORIGINS call the API from their own origin,
+ * cookies included (the refresh token rides in one). Any other origin gets no
+ * CORS headers, so the browser blocks it. Preflights are answered here.
+ */
+export const cors: RequestHandler = (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && env.CORS_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
+    res.append('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Branch-Id, X-Request-Id');
+      res.setHeader('Access-Control-Max-Age', '600');
+      res.status(204).end();
+      return;
+    }
+  }
+  next();
+};
+
 export const requestId: RequestHandler = (req, res, next) => {
   const id = (req.headers['x-request-id'] as string) || randomUUID();
   res.setHeader('x-request-id', id);

@@ -25,11 +25,21 @@ const schema = z.object({
     .transform((v) => (v === 'true' ? true : v === 'no-verify' ? ('no-verify' as const) : false)),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
   DATABASE_SCHEMA: z.string().default('public'),
+  /** Seconds between database health checks in the log. 0 turns them off. */
+  DB_HEARTBEAT_SECONDS: z.coerce.number().int().min(0).default(60),
 
   SCHEMA_SYNC_MODE: z.enum(['off', 'verify', 'safe', 'force']).default('verify'),
 
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   JWT_ACCESS_TTL: z.string().default('15m'),
+
+  /**
+   * Web apps on OTHER origins allowed to call this API with cookies, comma
+   * separated, e.g. "https://erp.swarnay.com,http://localhost:5173". Not needed
+   * when the app reaches the API through its own origin (Vite proxy / rewrite).
+   */
+  CORS_ORIGINS: z.string().default('')
+    .transform((v) => v.split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean)),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).optional(),
 });
@@ -43,13 +53,13 @@ if (!parsed.success) {
 }
 
 // In production, server must never apply schema changes on boot.
-const isDbSyncCli = process.argv.some((arg) => arg.includes('schema-sync'));
+const isDbSyncCli = process.argv.some((arg) => arg.includes('db-migrate'));
 if (
   !isDbSyncCli &&
   parsed.data.NODE_ENV === 'production' &&
   (parsed.data.SCHEMA_SYNC_MODE === 'safe' || parsed.data.SCHEMA_SYNC_MODE === 'force')
 ) {
-  console.error('Schema changes in production run only through npm run db:sync as a deploy step.');
+  console.error('Schema changes in production run only through npm run db:migrate as a deploy step.');
   process.exit(1);
 }
 

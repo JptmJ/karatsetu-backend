@@ -54,7 +54,7 @@ src/
     crud.ts              builds the five standard master endpoints
     routes.*.ts          every endpoint, declared via defineRoute()
 
-  cli/                   db:plan · db:sync · db:seed · gen:client · gen:docs
+  cli/                   db:migrate · db:seed · gen:client · gen:docs
   bootstrap.ts           imports every module — this is what makes the registry complete
   app.ts                 routers, CORS, /dev-docs, /health
   server.ts              boot: connect → sync schema → listen

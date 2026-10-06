@@ -1,7 +1,7 @@
 import './bootstrap.js';
 import { createApp } from './app.js';
 import { env, syncMode } from './core/config/env.js';
-import { checkConnection, closePool, pool } from './core/db/pool.js';
+import { checkConnection, closePool, pool, startDbHeartbeat, stopDbHeartbeat } from './core/db/pool.js';
 import { syncSchema } from './core/db/schema/sync.js';
 import { buildStamp } from './core/util/version.js';
 import { allTables } from './core/db/schema/registry.js';
@@ -28,9 +28,11 @@ async function main(): Promise<void> {
   const server = app.listen(env.PORT, () => {
     logger.info(`Listening on http://localhost:${env.PORT}`);
   });
+  startDbHeartbeat(env.DB_HEARTBEAT_SECONDS);
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'Shutting down');
+    stopDbHeartbeat();
     server.close(async () => {
       await closePool();
       process.exit(0);

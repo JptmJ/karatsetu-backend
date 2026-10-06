@@ -23,9 +23,10 @@ const LOGIN_DAY = '2026-09-28';
 
 /**
  * The refresh token lives in an httpOnly cookie, so page scripts never see it.
- * The app is served with the API on its own origin (Vite proxy in development,
- * a rewrite in production), which keeps the cookie first-party everywhere,
- * including Safari.
+ * The app either reaches the API on its own origin (Vite proxy, a rewrite) or on
+ * a sibling subdomain listed in CORS_ORIGINS (erp.swarnay.com → api.swarnay.com).
+ * Both are the same *site*, so a SameSite=Lax cookie is still first-party,
+ * including in Safari. A backend on an unrelated domain would break this.
  */
 const COOKIE = 'sw_rt';
 const cookieOptions = { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/api' } as const;
