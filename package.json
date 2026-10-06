@@ -1,5 +1,5 @@
 {
-  "name": "ratnagrid-backend",
+  "name": "swarnay-backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -23,7 +23,8 @@
     "gen:postman": "tsx src/cli/generate-postman.ts",
     "db:backfill-roles": "tsx src/cli/backfill-roles.ts",
     "db:backfill-masters": "tsx src/cli/backfill-masters.ts",
-    "routes:audit": "tsx src/cli/route-audit.ts"
+    "routes:audit": "tsx src/cli/route-audit.ts",
+    "db:migrate-role-types": "tsx src/cli/migrate-role-types.ts"
   },
   "dependencies": {
     "decimal.js": "^10.6.0",

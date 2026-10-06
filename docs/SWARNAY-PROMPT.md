@@ -1,4 +1,4 @@
-# RatnaGrid Backend — Standing Instructions
+# Swarnay Backend — Standing Instructions
 
 > **Attach this file to every backend prompt, however small the change.**
 > It is what keeps the API, `/dev-docs` and the generated frontend client from
@@ -80,7 +80,7 @@ New error code? Add it to `src/core/docs/error-catalog.ts` with the
 npm run gen:client
 ```
 
-Then copy `generated/ratnagrid-client.ts` into the frontend. The diff in that
+Then copy `generated/swarnay-client.ts` into the frontend. The diff in that
 file *is* the change the frontend needs.
 
 ### 6. Verify before declaring done

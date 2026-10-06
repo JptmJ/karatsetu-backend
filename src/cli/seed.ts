@@ -1,7 +1,7 @@
 /**
  * `npm run db:seed` — a working demo tenant with realistic data.
  *
- * The names, karigars, categories and themes mirror the RatnaGrid frontend's
+ * The names, karigars, categories and themes mirror the Swarnay frontend's
  * mock data, so the two line up while the UI is still being wired across.
  *
  *   npm run db:seed                 -- both demo tenants
@@ -344,7 +344,6 @@ async function wipeDemoData(): Promise<void> {
       await tx.query(`delete from ${table} where tenant_id = any($1::uuid[])`, [ids]).catch(() => undefined);
     }
     await tx.query(`delete from support_session where tenant_id = any($1::uuid[])`, [ids]).catch(() => undefined);
-    await tx.query(`delete from feature_flag where tenant_id = any($1::uuid[])`, [ids]).catch(() => undefined);
     await tx.query(`delete from tenant where id = any($1::uuid[])`, [ids]);
     logger.warn({ tenants: codes }, 'demo data wiped');
   });

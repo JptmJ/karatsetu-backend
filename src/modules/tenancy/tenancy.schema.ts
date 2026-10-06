@@ -30,6 +30,15 @@ export const tenantTable = defineTable({
     pan: col.text(),
     /** Free-form contact and billing details that no query ever filters on. */
     metadata: col.jsonb({ notNull: true, default: "'{}'::jsonb" }),
+    /**
+     * How many branches this business may have, as sold. Null means no limit,
+     * which is what every tenant starts on until a number is set.
+     *
+     * Checked when a branch is created, from the console and from inside the
+     * shop alike — a shop that may add its own branches should not be able to
+     * add thirty of them.
+     */
+    max_branches: col.int(),
     activated_at: col.timestamptz(),
   },
   indexes: [{ columns: ['status'] }],
@@ -63,24 +72,16 @@ export const tenantModuleTable = defineTable({
   indexes: [{ columns: ['licence'] }],
 });
 
-/**
- * Platform-wide feature flags, optionally targeted at one tenant.
- * A row with tenant_id null is the global default; a tenant row overrides it.
+/*
+ * Feature flags were here. The console could define and toggle them, globally or
+ * per tenant, but nothing in the application ever read one — a control panel
+ * over an empty socket — so the whole surface came out on 2026-10-04.
+ *
+ * The `feature_flag` table itself is deliberately left in the database: the
+ * differ refuses to drop a table it no longer recognises, and that is the right
+ * answer here. Nothing writes to it, and restoring the feature means restoring
+ * this definition and the two routes rather than rebuilding the schema.
  */
-export const featureFlagTable = defineTable({
-  name: 'feature_flag',
-  module: 'platform',
-  tenantScoped: false,
-  comment: 'System feature flags. Null tenant_id = global default.',
-  columns: {
-    tenant_id: col.fk('tenant', { comment: 'Null means this is the global default.' }),
-    flag_key: col.text({ notNull: true }),
-    enabled: col.bool({ notNull: true, default: 'false' }),
-    description: col.text(),
-    payload: col.jsonb({ notNull: true, default: "'{}'::jsonb" }),
-  },
-  uniques: [{ columns: ['tenant_id', 'flag_key'], nullsNotDistinct: true }],
-});
 
 /**
  * A platform operator temporarily acting inside a tenant, for support.
@@ -95,7 +96,12 @@ export const supportSessionTable = defineTable({
   tenantScoped: false,
   columns: {
     tenant_id: col.fk('tenant', { notNull: true }),
-    operator_user_id: col.fk('app_user', { notNull: true }),
+    /**
+     * The operator, who is a `platform_user` — not an `app_user`. This pointed
+     * at `app_user` originally, which no operator has a row in, so the insert
+     * could never satisfy it.
+     */
+    operator_user_id: col.fk('platform_user', { notNull: true }),
     reason: col.text({ notNull: true }),
     started_at: col.timestamptz({ notNull: true, default: 'now()' }),
     /** Hard stop. The token minted for the session carries this expiry too. */
@@ -103,9 +109,19 @@ export const supportSessionTable = defineTable({
     ended_at: col.timestamptz(),
     /** Read-only support is the default; write access is an explicit escalation. */
     can_write: col.bool({ notNull: true, default: 'false' }),
+    /**
+     * SHA-256 of the session token. Stored hashed so a leaked database row
+     * cannot be replayed as a live session, and checked on every request so
+     * ending a session takes effect immediately rather than at token expiry.
+     */
+    token_hash: col.text(),
     ip_address: col.text(),
   },
-  indexes: [{ columns: ['tenant_id', 'started_at'] }, { columns: ['operator_user_id'] }],
+  indexes: [
+    { columns: ['tenant_id', 'started_at'] },
+    { columns: ['operator_user_id'] },
+    { columns: ['token_hash'], unique: true },
+  ],
 });
 
 /** Module 12.4 — the five theme presets, plus per-tenant CSS variable overrides. */

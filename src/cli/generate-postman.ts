@@ -192,10 +192,10 @@ function build() {
 
   return {
     info: {
-      name: 'RatnaGrid API',
-      _postman_id: 'ratnagrid-api-collection',
+      name: 'Swarnay API',
+      _postman_id: 'swarnay-api-collection',
       description: [
-        '# RatnaGrid API',
+        '# Swarnay API',
         '',
         `Generated from the running server on ${new Date().toISOString().slice(0, 10)}.`,
         `${routes.length} endpoints.`,
@@ -256,7 +256,7 @@ function build() {
   };
 }
 
-const target = resolve(process.argv.find((a) => a.endsWith('.json')) ?? 'generated/RatnaGrid.postman_collection.json');
+const target = resolve(process.argv.find((a) => a.endsWith('.json')) ?? 'generated/Swarnay.postman_collection.json');
 mkdirSync(dirname(target), { recursive: true });
 const collection = build();
 writeFileSync(target, JSON.stringify(collection, null, 2), 'utf8');

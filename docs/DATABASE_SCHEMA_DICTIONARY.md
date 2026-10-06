@@ -1,4 +1,4 @@
-# KaratSetu / RatnaGrid — Database Architecture & Data Dictionary
+# Swarnay / Swarnay — Database Architecture & Data Dictionary
 
 Comprehensive Technical Reference of all Database Tables and Columns.
 

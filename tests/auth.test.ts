@@ -23,19 +23,19 @@ describe('Sign-in, sessions and edge cases', { timeout: 60_000 }, () => {
   async function call(path: string, init: { method?: string; body?: unknown; token?: string; cookie?: string; branch?: string } = {}): Promise<Reply> {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (init.token) headers.authorization = `Bearer ${init.token}`;
-    if (init.cookie) headers.cookie = `ks_rt=${init.cookie}`;
+    if (init.cookie) headers.cookie = `sw_rt=${init.cookie}`;
     if (init.branch) headers['x-branch-id'] = init.branch;
     const res = await fetch(`${base}${path}`, {
       method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
-    const setCookie = res.headers.getSetCookie().find((c) => c.startsWith('ks_rt=')) ?? '';
+    const setCookie = res.headers.getSetCookie().find((c) => c.startsWith('sw_rt=')) ?? '';
     const text = await res.text();
     return {
       status: res.status,
       body: text ? JSON.parse(text) : null,
-      cookie: setCookie.match(/^ks_rt=([^;]*)/)?.[1] || undefined,
+      cookie: setCookie.match(/^sw_rt=([^;]*)/)?.[1] || undefined,
       setCookie,
     };
   }

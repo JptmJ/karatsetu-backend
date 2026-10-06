@@ -1,7 +1,7 @@
 /**
  * The module registry, matching the frontend exactly.
  *
- * Keys, names, groups and licence states are taken from the RatnaGrid UI, so
+ * Keys, names, groups and licence states are taken from the Swarnay UI, so
  * `GET /api/tenancy/modules` can drive the module dock directly without the
  * frontend translating anything.
  */
@@ -216,7 +216,6 @@ export const MODULE_CATALOG: ModuleSpec[] = [
     subModules: [
       sub('platform.tenants', 'Tenant Directory', 'both', 'live'),
       sub('platform.entitlement', 'Module Entitlement', 'both', 'live'),
-      sub('platform.flags', 'Feature Flags', 'both', 'live'),
       sub('platform.support', 'Support Impersonation', 'both', 'live'),
     ],
   },

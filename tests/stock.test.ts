@@ -52,9 +52,35 @@ describe('Stock & Tagging', { timeout: 120_000 }, () => {
         `insert into app_user (id, tenant_id, email, full_name, password_hash, is_active, must_change_password)
          values (gen_random_uuid(), $1, $2, 'Store Keeper', 'x', true, false) returning id, token_version as tv`,
         [tenantId, `store.${run.toLowerCase()}@${SHOP}.in`]);
+      /*
+       * "Store Keeper" is no longer a seeded role: it is a staff role a shop
+       * defines for itself. Built here exactly as the console would build it —
+       * receives goods, tags, moves stock and counts it, but may not adjust
+       * stock or post a count.
+       */
+      const role = await tx.one<{ id: string }>(
+        `insert into role (id, tenant_id, code, name, role_type, description, is_system, is_active)
+         values (gen_random_uuid(), $1, 'storekeeper', 'Store Keeper', 'staff', $2, false, true)
+         on conflict (tenant_id, code) where deleted_at is null do update set name = role.name
+         returning id`,
+        [tenantId, 'Receives goods, tags pieces, moves stock and counts it.']);
+
+      for (const permission of [
+        'stock.view', 'stock.opening.create', 'stock.transfer.create', 'stock.transfer.post',
+        'stock.transfer.cancel', 'stock.count.create', 'tagging.*',
+        'pos.purchase.view', 'pos.purchase.create', 'oldgold.view', 'oldgold.melt',
+        'master.item.view', 'master.purity.view', 'master.branch.view', 'master.rates.view',
+        'master.customer.view',
+      ]) {
+        await tx.query(
+          `insert into role_permission (id, tenant_id, role_id, permission)
+           values (gen_random_uuid(), $1, $2, $3) on conflict do nothing`,
+          [tenantId, role.id, permission]);
+      }
+
       await tx.query(
         `insert into user_role (id, tenant_id, user_id, role_id, branch_id)
-         select gen_random_uuid(), $1, $2, id, null from role where tenant_id = $1 and code = 'storekeeper'`, [tenantId, s.id]);
+         values (gen_random_uuid(), $1, $2, $3, null)`, [tenantId, s.id, role.id]);
       return { o, s };
     });
     main = users.o.branch;
@@ -73,7 +99,13 @@ describe('Stock & Tagging', { timeout: 120_000 }, () => {
     ids.bulk = (await call('/api/master/items', { code: `BULK${run}`, name: `Bulk ${run}`, metal_id: ids.gold, tracking: 'lot', nature: 'raw_metal' })).body.id;
     const branch = (await call('/api/master/branches', { code: `S${run}`.slice(0, 20), name: 'Surat' })).body;
     ids.branch2 = branch.id;
-    ids.surat = (await call('/api/master/locations', { branch_id: branch.id, code: 'COUNTER', name: 'Counter' })).body.id;
+    /*
+     * A branch added from inside the shop arrives with its stock locations, the
+     * same as one added from the console. This used to create a COUNTER by hand
+     * because that path seeded none, which meant a real shop's second branch had
+     * nowhere to hold stock.
+     */
+    ids.surat = await find(`/api/master/locations?branch_id=${branch.id}`, 'COUNTER');
   });
 
   afterAll(async () => { await new Promise<void>((resolve) => server.close(() => resolve())); });

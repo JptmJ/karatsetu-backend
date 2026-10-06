@@ -1,9 +1,9 @@
-# RatnaGrid — Database Reference
+# Swarnay — Database Reference
 
-Generated from the schema definitions on 2026-09-30.
+Generated from the schema definitions on 2026-10-03.
 **Do not edit by hand** — run `npm run gen:docs`.
 
-86 tables · 1794 columns.
+86 tables · 1798 columns.
 
 ---
 
@@ -336,7 +336,7 @@ soft delete
 | `phone` | text | no |  |
 | `full_name` | text | **yes** |  |
 | `password_hash` | text | **yes** | scrypt: salt:hash, both hex. |
-| `role_code` | text | auto | one of: owner, admin, sales, cashier, accountant, storekeeper · default 'sales' |
+| `role_code` | text | no | Legacy. Roles live in user_role; kept only so old rows are not lost. |
 | `token_version` | integer | auto | default 0 · Bumped on role change, deactivation or password reset — older access tokens stop working. |
 | `must_change_password` | boolean | auto | default false |
 | `password_changed_at` | timestamp | no |  |
@@ -366,6 +366,7 @@ soft delete
 | `changes` | json | no |  |
 | `request_id` | text | no |  |
 | `ip_address` | text | no |  |
+| `support_session_id` | → support_session | no |  |
 
 **Must supply on insert:** `action`
 
@@ -394,7 +395,7 @@ soft delete
 
 ### `role`
 
-Tenant-defined role. System roles are seeded from templates and cannot be deleted.
+A role inside one business. owner and admin are seeded; staff roles are named per business by the super admin.
 
 soft delete
 
@@ -402,6 +403,7 @@ soft delete
 |---|---|---|---|
 | `code` | text | **yes** |  |
 | `name` | text | **yes** |  |
+| `role_type` | text | auto | one of: owner, admin, staff · default 'staff' |
 | `description` | text | no |  |
 | `is_system` | boolean | auto | default false |
 | `is_active` | boolean | auto | default true |
@@ -1499,7 +1501,7 @@ System feature flags. Null tenant_id = global default.
 
 ### `platform_user`
 
-The super admin. Exactly one row, seeded from the CLI — never created through the API.
+Platform operators. One row today — the super admin, seeded from the CLI, never created through the API.
 
 **platform-level** (not tenant-scoped) · soft delete
 
@@ -1528,12 +1530,13 @@ The super admin. Exactly one row, seeded from the CLI — never created through 
 
 | Column | Type | Required | Notes |
 |---|---|---|---|
-| `operator_user_id` | → app_user | **yes** |  |
+| `operator_user_id` | → platform_user | **yes** |  |
 | `reason` | text | **yes** |  |
 | `started_at` | timestamp | auto |  |
 | `ends_at` | timestamp | **yes** |  |
 | `ended_at` | timestamp | no |  |
 | `can_write` | boolean | auto | default false |
+| `token_hash` | text | no |  |
 | `ip_address` | text | no |  |
 
 **Must supply on insert:** `operator_user_id`, `reason`, `ends_at`
@@ -2450,6 +2453,7 @@ One row per customer business. Everything else in the database points here.
 | `gstin` | text | no |  |
 | `pan` | text | no |  |
 | `metadata` | json | auto | default '{}' |
+| `max_branches` | integer | no |  |
 | `activated_at` | timestamp | no |  |
 
 **Must supply on insert:** `code`, `legal_name`, `display_name`

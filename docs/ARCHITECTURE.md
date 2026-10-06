@@ -1,4 +1,4 @@
-# KaratSetu Backend — How It Is Built
+# Swarnay Backend — How It Is Built
 
 Plain-language guide to the database and backend design.
 
@@ -80,7 +80,7 @@ demo writes a row tagged 'rival'
 ```
 
 > **One setup step this requires:** the app must not connect as a superuser.
-> Create a dedicated role (`karatsetu_app`) that owns the schema. The local dev
+> Create a dedicated role (`swarnay_app`) that owns the schema. The local dev
 > database is already set up this way.
 
 ---

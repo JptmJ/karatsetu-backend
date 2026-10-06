@@ -100,7 +100,7 @@ function generate(): string {
     .map(([module, list]) => `## ${MODULE_NAMES.get(module) ?? module}\n\n${list.map(tableSection).join('\n---\n\n')}`)
     .join('\n\n');
 
-  return `# RatnaGrid — Database Reference
+  return `# Swarnay — Database Reference
 
 Generated from the schema definitions on ${new Date().toISOString().slice(0, 10)}.
 **Do not edit by hand** — run \`npm run gen:docs\`.

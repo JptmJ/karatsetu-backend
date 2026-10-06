@@ -8,6 +8,7 @@
  * All tenant mutations run with the correct tenant context so repo() and RLS
  * stamp the proper tenant_id.
  */
+import { randomBytes } from 'node:crypto';
 import type { Tx } from '../../core/db/client.js';
 import { asPlatform, asTenant, withTenant } from '../../core/db/client.js';
 import { repo } from '../../core/db/repository.js';
@@ -18,8 +19,9 @@ import { hashPassword, normalizePhone } from '../identity/auth.service.js';
 import { invalidateUserAccess } from '../identity/access.service.js';
 import { seedSystemRoles } from '../identity/role-seed.js';
 import { provisionTenant } from '../tenancy/provisioning.service.js';
+import { createBranchWithLocations, type BranchInput } from '../tenancy/branch.service.js';
 import { MODULE_CATALOG, type TenantKind } from '../tenancy/module-catalog.js';
-import { TENANT_ROLES, tenantRole, type TenantRoleCode } from './roles.js';
+import { ADMIN_ROLE, isAdminRole, TENANT_ROLES } from './roles.js';
 import { audit } from './platform-auth.service.js';
 
 export interface CreateTenantInput {
@@ -34,6 +36,8 @@ export interface CreateTenantInput {
   admin: { email?: string | null; fullName: string; password: string; phone?: string | null };
   /** The first branch. More can be added afterwards. */
   branch?: { code: string; name: string; city?: string; state?: string; stateCode?: string; kind?: 'showroom' | 'factory' | 'warehouse' | 'office' };
+  /** How many branches they may have. Omitted means no limit. */
+  maxBranches?: number | null;
   /** Module keys to switch on. Omit to use each module's default licence. */
   modules?: Array<{ key: string; licence: 'included' | 'purchased' | 'trial'; trialDays?: number }>;
 }
@@ -62,6 +66,7 @@ export async function createTenant(input: CreateTenantInput, actorId: string, ip
       status: 'active',
       gstin: input.gstin ?? null,
       pan: input.pan ?? null,
+      max_branches: input.maxBranches ?? null,
     });
 
     let branchId = '';
@@ -121,7 +126,10 @@ export async function createTenant(input: CreateTenantInput, actorId: string, ip
 
 export async function updateTenant(
   tenantId: string,
-  changes: Partial<{ displayName: string; legalName: string; status: string; gstin: string; pan: string; kind: TenantKind }>,
+  changes: Partial<{
+    displayName: string; legalName: string; status: string; gstin: string; pan: string;
+    kind: TenantKind; maxBranches: number | null;
+  }>,
   actorId: string,
   ip?: string,
 ) {
@@ -129,9 +137,13 @@ export async function updateTenant(
     const existing = await tx.maybeOne<Record<string, unknown>>(`select * from tenant where id = $1`, [tenantId]);
     if (!existing) throw new NotFoundError('Tenant', tenantId);
 
+    /*
+     * A limit below what the business already has is allowed: it stops them
+     * adding more without taking away a branch they are trading from.
+     */
     const map: Record<string, string> = {
       displayName: 'display_name', legalName: 'legal_name', status: 'status',
-      gstin: 'gstin', pan: 'pan', kind: 'kind',
+      gstin: 'gstin', pan: 'pan', kind: 'kind', maxBranches: 'max_branches',
     };
     const sets: string[] = []; const params: unknown[] = [tenantId];
     for (const [key, column] of Object.entries(map)) {
@@ -149,48 +161,14 @@ export async function updateTenant(
   });
 }
 
-export interface CreateBranchInput {
-  code: string;
-  name: string;
-  kind?: 'showroom' | 'factory' | 'warehouse' | 'office';
-  gstin?: string;
-  stateCode?: string;
-  city?: string;
-  state?: string;
-  address_line1?: string;
-  pincode?: string;
-  phone?: string;
-  email?: string;
-}
+/** One shape for a branch, wherever it is created from. */
+export type CreateBranchInput = BranchInput;
 
 /** A branch is useless without somewhere for stock to sit, so locations come with it. */
 export async function createBranch(tenantId: string, input: CreateBranchInput, actorId: string | null, ip?: string) {
-  const branch = await asTenant(tenantId, async (tx) => {
-    const clash = await tx.maybeOne<{ id: string }>(
-      `select id from branch where lower(code) = lower($1) and deleted_at is null`, [input.code]);
-    if (clash) throw new ConflictError(`A branch with code "${input.code}" already exists.`);
-
-    const created = await repo<{ id: string }>(tx, 'branch').insert({
-      code: input.code, name: input.name, kind: input.kind ?? 'showroom',
-      gstin: input.gstin ?? null, state_code: input.stateCode ?? null,
-      city: input.city ?? null, state: input.state ?? null,
-      address_line1: input.address_line1 ?? null, pincode: input.pincode ?? null,
-      phone: input.phone ?? null, email: input.email ?? null, is_active: true,
-    });
-
-    const locations = (input.kind ?? 'showroom') === 'factory'
-      ? [{ code: 'VAULT', name: 'Vault', kind: 'vault', is_default: true },
-         { code: 'FLOOR', name: 'Production Floor', kind: 'floor', is_default: false }]
-      : [{ code: 'COUNTER', name: 'Counter', kind: 'counter', is_default: true },
-         { code: 'VAULT', name: 'Vault', kind: 'vault', is_default: false },
-         { code: 'WINDOW', name: 'Display Window', kind: 'window', is_default: false }];
-
-    for (const location of locations) {
-      await repo(tx, 'stock_location').insert({ branch_id: created.id, ...location, is_active: true });
-    }
-    // Numbering needs nothing here: the business's shared series serve every branch.
-    return created;
-  });
+  // The same path the shop's own Masters screen uses, so a branch is a branch
+  // however it was added — same locations, same code check, same limit.
+  const branch = await asTenant(tenantId, (tx) => createBranchWithLocations(tx, input as BranchInput));
 
   if (actorId) {
     await asPlatform(async (tx) => {
@@ -280,26 +258,182 @@ export async function setUserActive(
   });
 }
 
-export async function changeUserRole(tenantId: string, userId: string, newRoleCode: string, operatorId: string) {
+/**
+ * A branch has at most one admin. Either every branch has its own, or one admin
+ * covers all of them — a null `branchId` is that second shape, and it conflicts
+ * with every branch at once.
+ *
+ * Enforced here because no database constraint can express it: the rule spans
+ * `user_role` rows and treats null as "all branches" rather than "no branch".
+ */
+async function assertBranchAdminFree(
+  ttx: Tx, roleCode: string, branchId: string | null, exceptUserId: string | null,
+) {
+  if (!isAdminRole(roleCode)) return;
+
+  const clash = await ttx.maybeOne<{ full_name: string; branch_id: string | null }>(
+    `select u.full_name, ur.branch_id
+       from user_role ur
+       join role r on r.id = ur.role_id
+       join app_user u on u.id = ur.user_id
+      where r.code = $1
+        and u.is_active = true and u.deleted_at is null
+        and ($2::uuid is null or ur.branch_id is null or ur.branch_id = $2)
+        and ($3::uuid is null or u.id <> $3)
+      limit 1`,
+    [ADMIN_ROLE, branchId, exceptUserId],
+  );
+
+  if (clash) {
+    throw new ConflictError(
+      clash.branch_id === null
+        ? `${clash.full_name} already covers every branch as admin. Move them to one branch first.`
+        : `That branch already has an admin: ${clash.full_name}.`,
+    );
+  }
+}
+
+export async function changeUserRole(
+  tenantId: string, userId: string, newRoleCode: string, operatorId: string,
+  branchId?: string | null,
+) {
   return asPlatform(async (tx) => {
     const from = await withTenant(tx, tenantId, async (ttx) => {
-      const user = await ttx.maybeOne(`select id from app_user where id = $1 and deleted_at is null for update`, [userId]);
+      const user = await ttx.maybeOne<{ id: string; default_branch_id: string | null }>(
+        `select id, default_branch_id from app_user where id = $1 and deleted_at is null for update`, [userId]);
       if (!user) throw new NotFoundError('User', userId);
       const role = await ttx.maybeOne<{ id: string }>(`select id from role where code = $1 and deleted_at is null`, [newRoleCode]);
       if (!role) throw new ValidationError(`Role "${newRoleCode}" does not exist for this business.`);
+
+      // Undefined means "leave their branch alone"; null means "all branches".
+      const target = branchId === undefined ? user.default_branch_id : branchId;
+      await assertBranchAdminFree(ttx, newRoleCode, target, userId);
 
       const before = await ttx.query<{ code: string; branch_id: string | null }>(
         `select r.code, ur.branch_id from user_role ur join role r on r.id = ur.role_id where ur.user_id = $1`, [userId],
       );
       await ttx.query(`delete from user_role where user_id = $1`, [userId]);
-      await repo(ttx, 'user_role').insert({ user_id: userId, role_id: role.id, branch_id: null });
+      await repo(ttx, 'user_role').insert({ user_id: userId, role_id: role.id, branch_id: target });
+      if (branchId !== undefined) {
+        await ttx.query(`update app_user set default_branch_id = $2 where id = $1`, [userId, branchId]);
+      }
       await ttx.query(`update app_user set token_version = token_version + 1 where id = $1`, [userId]);
       invalidateUserAccess(tenantId, userId);
       return before;
     });
     await audit(tx, operatorId, 'user.role_change', {
-      tenantId, targetType: 'app_user', targetId: userId, changes: { from, to: newRoleCode },
+      tenantId, targetType: 'app_user', targetId: userId,
+      changes: { from, to: newRoleCode, branchId: branchId === undefined ? 'unchanged' : branchId },
     });
+  });
+}
+
+/**
+ * Name, contact details and branch.
+ *
+ * This has no tenant-side equivalent any more: a shop cannot edit its own staff,
+ * so if this did not exist nobody could correct a misspelled name.
+ */
+export async function updateTenantUserDetails(
+  tenantId: string, userId: string,
+  changes: Partial<{ fullName: string; email: string | null; phone: string | null; branchId: string | null }>,
+  operatorId: string, ip?: string,
+) {
+  return asPlatform(async (tx) => {
+    const result = await withTenant(tx, tenantId, async (ttx) => {
+      const user = await ttx.maybeOne<{ id: string }>(
+        `select id from app_user where id = $1 and deleted_at is null for update`, [userId]);
+      if (!user) throw new NotFoundError('User', userId);
+
+      if (changes.branchId !== undefined) {
+        const held = await ttx.maybeOne<{ code: string }>(
+          `select r.code from user_role ur join role r on r.id = ur.role_id where ur.user_id = $1 limit 1`, [userId]);
+        if (held) await assertBranchAdminFree(ttx, held.code, changes.branchId, userId);
+      }
+
+      if (changes.email !== undefined && changes.email) {
+        const taken = await ttx.maybeOne<{ id: string }>(
+          `select id from app_user where lower(email) = lower($1) and id <> $2 and deleted_at is null`,
+          [changes.email, userId]);
+        if (taken) throw new ConflictError(`${changes.email} is already used by someone in this business.`);
+      }
+
+      const map: Record<string, string> = {
+        fullName: 'full_name', email: 'email', phone: 'phone', branchId: 'default_branch_id',
+      };
+      const sets: string[] = [];
+      const params: unknown[] = [userId];
+      for (const [key, column] of Object.entries(map)) {
+        const value = (changes as Record<string, unknown>)[key];
+        if (value === undefined) continue;
+        params.push(
+          key === 'phone' && typeof value === 'string' && value.trim() ? normalizePhone(value)
+          : key === 'email' && typeof value === 'string' ? value.trim().toLowerCase() || null
+          : value,
+        );
+        sets.push(`${column} = $${params.length}`);
+      }
+      if (!sets.length) return null;
+
+      // A branch move changes which grants apply, so the token has to turn over.
+      if (changes.branchId !== undefined) sets.push('token_version = token_version + 1');
+
+      const row = await ttx.one<Record<string, unknown>>(
+        `update app_user set ${sets.join(', ')}, updated_at = now() where id = $1
+         returning id, email, full_name, phone, is_active, default_branch_id`,
+        params);
+      if (changes.branchId !== undefined) {
+        await ttx.query(`update user_role set branch_id = $2 where user_id = $1`, [userId, changes.branchId]);
+      }
+      invalidateUserAccess(tenantId, userId);
+      return row;
+    });
+
+    if (result) {
+      await audit(tx, operatorId, 'user.update', {
+        tenantId, targetType: 'app_user', targetId: userId, changes, ip,
+      });
+    }
+    return result ?? { id: userId, unchanged: true };
+  });
+}
+
+/**
+ * A new temporary password, returned once.
+ *
+ * The recovery path for a locked-out shop. The tenant-side reset is gone, so
+ * without this a business whose only admin forgets their password has nobody to
+ * turn to.
+ */
+export async function resetTenantUserPassword(
+  tenantId: string, userId: string, operatorId: string, ip?: string,
+): Promise<{ temporaryPassword: string }> {
+  const password = randomBytes(9).toString('base64url');
+
+  return asPlatform(async (tx) => {
+    await withTenant(tx, tenantId, async (ttx) => {
+      const user = await ttx.maybeOne<{ id: string }>(
+        `select id from app_user where id = $1 and deleted_at is null`, [userId]);
+      if (!user) throw new NotFoundError('User', userId);
+
+      await ttx.query(
+        `update app_user
+            set password_hash = $2, must_change_password = true,
+                failed_login_count = 0, locked_until = null,
+                token_version = token_version + 1, updated_at = now()
+          where id = $1`,
+        [userId, await hashPassword(password)]);
+      // Signed out everywhere: a reset they did not ask for should not leave an
+      // existing session running.
+      await ttx.query(
+        `update refresh_token set revoked_at = now() where user_id = $1 and revoked_at is null`, [userId]);
+      invalidateUserAccess(tenantId, userId);
+    });
+
+    await audit(tx, operatorId, 'user.password_reset', {
+      tenantId, targetType: 'app_user', targetId: userId, ip,
+    });
+    return { temporaryPassword: password };
   });
 }
 

@@ -29,7 +29,7 @@ export const pool = new Pool({
   connectionString: env.DATABASE_URL,
   max: env.DATABASE_POOL_MAX,
   ssl: sslOption(),
-  application_name: 'karat-setu',
+  application_name: 'swarnay',
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 30_000,
 });

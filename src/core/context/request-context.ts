@@ -16,6 +16,12 @@ export interface RequestContext {
   permissions: Set<string>;
   /** Platform-level work (schema sync, tenant provisioning) that spans tenants. */
   bypassRls?: boolean;
+  /**
+   * Set only while a platform operator is working inside a tenant through a
+   * support session. Every audit row written in this request is tagged with it,
+   * and a read-only session refuses anything that is not a GET.
+   */
+  support?: { sessionId: string; operatorId: string; canWrite: boolean; endsAt: string };
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();

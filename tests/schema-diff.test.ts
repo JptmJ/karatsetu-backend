@@ -145,6 +145,107 @@ describe('schema diff safety rules', () => {
     expect(widget.uniques[0]?.columns).toEqual(['tenant_id', 'code']);
   });
 
+  it('repoints a foreign key that now references a different table', () => {
+    /*
+     * The case this guards: support_session.operator_user_id was moved from
+     * app_user to platform_user. The constraint name does not change, so
+     * matching on name alone reported the database as matching for ever while
+     * every insert failed against the old parent table.
+     */
+    defineTable({ name: 'operator', module: 'test', tenantScoped: false, columns: { name: col.text() } });
+    defineTable({
+      name: 'ticket',
+      module: 'test',
+      tenantScoped: false,
+      columns: { operator_id: col.fk('operator', { notNull: true }) },
+    });
+
+    const live = new Map([
+      ['operator', liveTable('operator', { id: { type: 'uuid' }, name: { type: 'text' } })],
+      ['ticket', liveTable('ticket', { id: { type: 'uuid' }, operator_id: { type: 'uuid', notNull: true } })],
+    ]) as LiveSchema;
+
+    live.get('ticket')!.constraints.set('fk_ticket_operator_id', {
+      name: 'fk_ticket_operator_id',
+      kind: 'f',
+      definition: 'FOREIGN KEY (operator_id) REFERENCES staff(id) ON DELETE RESTRICT',
+    });
+
+    const change = diffSchema(live).find((c) => c.object === 'fk_ticket_operator_id');
+    expect(change).toBeDefined();
+    expect(change!.description).toContain('repoint');
+    // Dropped first, then recreated against the right parent.
+    expect(change!.sql[0]).toContain('drop constraint "fk_ticket_operator_id"');
+    expect(change!.sql[1]).toContain('references "operator"');
+  });
+
+  it('leaves a foreign key alone when it already points at the right table', () => {
+    defineTable({ name: 'operator', module: 'test', tenantScoped: false, columns: { name: col.text() } });
+    defineTable({
+      name: 'ticket',
+      module: 'test',
+      tenantScoped: false,
+      columns: { operator_id: col.fk('operator', { notNull: true }) },
+    });
+
+    const live = new Map([
+      ['operator', liveTable('operator', { id: { type: 'uuid' }, name: { type: 'text' } })],
+      ['ticket', liveTable('ticket', { id: { type: 'uuid' }, operator_id: { type: 'uuid', notNull: true } })],
+    ]) as LiveSchema;
+
+    live.get('ticket')!.constraints.set('fk_ticket_operator_id', {
+      name: 'fk_ticket_operator_id',
+      kind: 'f',
+      // Postgres prints its own wording for the delete rule; that must not
+      // count as a difference or every sync would rebuild the same key.
+      definition: 'FOREIGN KEY (operator_id) REFERENCES operator(id) ON DELETE RESTRICT',
+    });
+
+    expect(diffSchema(live).find((c) => c.object === 'fk_ticket_operator_id')).toBeUndefined();
+  });
+
+  it('drops a value check the model no longer declares', () => {
+    /*
+     * The case this guards: app_user.role_code listed six allowed roles, four
+     * were retired, and the column became free text. Every sync then tried to
+     * narrow a list that was no longer in the model and failed, while the
+     * database went on refusing the values the model now allowed.
+     */
+    defineTable({ name: 'widget', module: 'test', columns: { label: col.text() } });
+
+    const live = new Map([
+      ['widget', liveTable('widget', { id: { type: 'uuid' }, label: { type: 'text' } })],
+    ]) as LiveSchema;
+
+    live.get('widget')!.constraints.set('ck_widget_label', {
+      name: 'ck_widget_label',
+      kind: 'c',
+      definition: "CHECK ((label = ANY (ARRAY['a'::text, 'b'::text])))",
+    });
+
+    const change = diffSchema(live).find((c) => c.object === 'ck_widget_label');
+    expect(change?.kind).toBe('drop_constraint');
+    expect(change?.risk).toBe('safe');
+    expect(change?.sql[0]).toContain('drop constraint "ck_widget_label"');
+  });
+
+  it('leaves a check somebody added by hand alone', () => {
+    // Only our own ck_ names are ours to remove.
+    defineTable({ name: 'widget', module: 'test', columns: { label: col.text() } });
+
+    const live = new Map([
+      ['widget', liveTable('widget', { id: { type: 'uuid' }, label: { type: 'text' } })],
+    ]) as LiveSchema;
+
+    live.get('widget')!.constraints.set('widget_label_not_blank', {
+      name: 'widget_label_not_blank',
+      kind: 'c',
+      definition: "CHECK ((label <> ''::text))",
+    });
+
+    expect(diffSchema(live).find((c) => c.object === 'widget_label_not_blank')).toBeUndefined();
+  });
+
   it('orders tables so a table is created after whatever it points at', () => {
     defineTable({ name: 'child', module: 'test', tenantScoped: false, columns: { parent_id: col.fk('parent') } });
     defineTable({ name: 'parent', module: 'test', tenantScoped: false, columns: { name: col.text() } });

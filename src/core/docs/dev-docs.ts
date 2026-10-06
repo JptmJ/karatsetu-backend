@@ -2,7 +2,7 @@
  * The /dev-docs page.
  *
  * Rendered from the route registry on every request, so it is always exactly
- * what the server is running. Styled with the RatnaGrid deep-forest palette and
+ * what the server is running. Styled with the Swarnay deep-forest palette and
  * the same two typefaces as the app, so a frontend developer moving between the
  * product and the docs does not feel like they have left.
  */
@@ -164,7 +164,7 @@ export function renderDevDocs(options: { version: string; baseUrl: string }): st
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RatnaGrid API — Developer Docs</title>
+<title>Swarnay API — Developer Docs</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C79B3B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='6 3 18 3 22 9 12 22 2 9 6 3'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -377,7 +377,7 @@ curl ${esc(options.baseUrl)}/api/tenancy/modules \\
 </div>
 
 <footer>
-  <span>RatnaGrid API — generated ${esc(new Date().toISOString())}</span>
+  <span>Swarnay API — generated ${esc(new Date().toISOString())}</span>
   <span>${total} endpoints across ${ordered.length} modules</span>
 </footer>
 

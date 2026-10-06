@@ -5,6 +5,9 @@ import { defineCrud } from './crud.js';
 import { transaction, type Tx } from '../core/db/client.js';
 import { repo } from '../core/db/repository.js';
 import { BusinessRuleError, ForbiddenError, ValidationError } from '../core/errors/app-error.js';
+import {
+  assertBranchAllowance, assertBranchCodeFree, seedBranchLocations, type BranchKind,
+} from '../modules/tenancy/branch.service.js';
 import { compare } from '../core/util/decimal.js';
 import { normalizePhone } from '../modules/identity/auth.service.js';
 import { nextDocumentNumber } from '../modules/numbering/numbering.service.js';
@@ -58,11 +61,25 @@ defineCrud({
     is_head_office: z.boolean().optional(), is_active: z.boolean().optional(),
   }),
   hooks: {
+    /*
+     * The same three steps the console's own branch creation takes, through
+     * `branch.service`: the plan's branch allowance, a free code, and the stock
+     * locations afterwards. A branch added here used to get no locations at all,
+     * so the first sale at it would fail.
+     */
     beforeCreate: async (tx, v) => {
+      await assertBranchAllowance(tx);
+      await assertBranchCodeFree(tx, String(v.code));
       if (v.is_head_office) await claimFlag(tx, 'branch', 'is_head_office');
       return withGstState(v);
     },
+    afterCreate: async (tx, created, values) => {
+      await seedBranchLocations(tx, String(created.id), (values.kind as BranchKind) ?? 'showroom');
+    },
     beforeUpdate: async (tx, v, current) => {
+      if (v.code && String(v.code).toLowerCase() !== String(current.code).toLowerCase()) {
+        await assertBranchCodeFree(tx, String(v.code), String(current.id));
+      }
       if (v.is_head_office && !current.is_head_office) await claimFlag(tx, 'branch', 'is_head_office');
       if (v.is_active === false && current.is_active) {
         const others = await tx.one<{ n: number }>(

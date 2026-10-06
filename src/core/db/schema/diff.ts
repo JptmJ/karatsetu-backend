@@ -5,7 +5,7 @@
  * The rule that keeps this safe to run on every boot: adding things is
  * automatic, removing or rewriting things is not.
  */
-import type { LiveSchema, ResolvedTable, SchemaChange } from './types.js';
+import type { ColumnDef, LiveSchema, ResolvedTable, SchemaChange } from './types.js';
 import { tablesInDependencyOrder } from './registry.js';
 import { normaliseDefault } from './introspect.js';
 import {
@@ -214,6 +214,28 @@ function diffDroppedColumns(
   }
 }
 
+/**
+ * The table and column a live foreign key actually points at, read back out of
+ * `pg_get_constraintdef`, e.g. `FOREIGN KEY (x) REFERENCES app_user(id) ON ...`.
+ */
+function liveFkTarget(definition: string): string | null {
+  const match = /references\s+"?([a-z_][a-z0-9_]*)"?\s*\(\s*"?([a-z_][a-z0-9_]*)"?\s*\)/i.exec(definition);
+  return match ? `${match[1]}.${match[2]}` : null;
+}
+
+/**
+ * Does the live foreign key point where the model says it should?
+ *
+ * Only the target is compared. `on delete` / `on update` wording varies between
+ * how Postgres prints a constraint and how we write it, and getting that wrong
+ * would mean rebuilding the same key on every sync.
+ */
+function fkMatches(definition: string, def: ColumnDef): boolean {
+  const wanted = `${def.references!.table}.${def.references!.column ?? 'id'}`;
+  const live = liveFkTarget(definition);
+  return live === null || live === wanted;
+}
+
 /** FKs, uniques, checks, indexes and RLS — the parts that live outside CREATE TABLE. */
 function diffTableInternals(
   table: ResolvedTable,
@@ -232,7 +254,8 @@ function diffTableInternals(
     if (fkSql) {
       const cname = fkName(table.name, name);
       wantedConstraints.add(cname);
-      if (!constraints.has(cname)) {
+      const live = constraints.get(cname);
+      if (!live) {
         changes.push({
           kind: 'add_constraint',
           risk: 'warn',
@@ -240,6 +263,24 @@ function diffTableInternals(
           object: cname,
           description: `link ${table.name}.${name} -> ${def.references!.table}`,
           sql: [fkSql],
+        });
+      } else if (!isNew && !fkMatches(live.definition, def)) {
+        /*
+         * The constraint exists under the right name but points somewhere else.
+         * Matching on name alone used to let a retargeted foreign key sit
+         * undetected for ever, with `db:plan` reporting the database as
+         * matching while every insert failed against the old parent table.
+         */
+        changes.push({
+          kind: 'add_constraint',
+          risk: 'warn',
+          table: table.name,
+          object: cname,
+          description: `repoint ${table.name}.${name} -> ${def.references!.table} (was ${liveFkTarget(live.definition) ?? 'something else'})`,
+          sql: [
+            `alter table ${quoteIdent(table.name)} drop constraint ${quoteIdent(cname)}`,
+            fkSql,
+          ],
         });
       }
     }
@@ -358,6 +399,27 @@ function diffTableInternals(
       table: table.name,
       object: cname,
       description: `unique rule ${cname} is no longer in the model`,
+      sql: [`alter table ${quoteIdent(table.name)} drop constraint ${quoteIdent(cname)}`],
+    });
+  }
+
+  /*
+   * Value checks we no longer want — the same reasoning, and the case that
+   * actually bit: a column's allowed values were removed from the model, so
+   * every sync tried to narrow a list that no longer existed and failed, while
+   * the database went on refusing values the model now allows.
+   *
+   * Only our own `ck_` names are touched. A check someone added by hand to
+   * guard something the model does not know about is left alone.
+   */
+  for (const [cname, c] of constraints) {
+    if (c.kind !== 'c' || wantedConstraints.has(cname) || !cname.startsWith('ck_')) continue;
+    changes.push({
+      kind: 'drop_constraint',
+      risk: 'safe',
+      table: table.name,
+      object: cname,
+      description: `value check ${cname} is no longer in the model`,
       sql: [`alter table ${quoteIdent(table.name)} drop constraint ${quoteIdent(cname)}`],
     });
   }

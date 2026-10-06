@@ -56,11 +56,11 @@ export interface AccessTokenClaims {
 }
 
 export const signAccessToken = (claims: AccessTokenClaims): string =>
-  jwt.sign(claims, env.JWT_SECRET, { algorithm: 'HS256', expiresIn: env.JWT_ACCESS_TTL as never, issuer: 'karat-setu' });
+  jwt.sign(claims, env.JWT_SECRET, { algorithm: 'HS256', expiresIn: env.JWT_ACCESS_TTL as never, issuer: 'swarnay' });
 
 export function verifyAccessToken(token: string): AccessTokenClaims {
   try {
-    return jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'karat-setu' }) as AccessTokenClaims;
+    return jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'swarnay' }) as AccessTokenClaims;
   } catch {
     throw new UnauthorizedError('Your session has expired. Please sign in again.', 'session_expired');
   }

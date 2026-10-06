@@ -1,4 +1,4 @@
-# KaratSetu Backend
+# Swarnay Backend
 
 Multi-tenant backend for jewellery manufacturers and retailers.
 Node.js · TypeScript · PostgreSQL · Express 5.
@@ -31,10 +31,10 @@ The app must **not** connect as a Postgres superuser — superusers bypass Row
 Level Security, which is what keeps tenants apart. Create a dedicated role:
 
 ```sql
-CREATE ROLE karatsetu_app LOGIN PASSWORD '...' NOSUPERUSER NOCREATEDB NOCREATEROLE;
-GRANT ALL ON DATABASE your_db TO karatsetu_app;
-GRANT ALL ON SCHEMA public TO karatsetu_app;
-ALTER SCHEMA public OWNER TO karatsetu_app;
+CREATE ROLE swarnay_app LOGIN PASSWORD '...' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+GRANT ALL ON DATABASE your_db TO swarnay_app;
+GRANT ALL ON SCHEMA public TO swarnay_app;
+ALTER SCHEMA public OWNER TO swarnay_app;
 ```
 
 Postgres 15 or newer (uses `UNIQUE NULLS NOT DISTINCT`).
@@ -138,4 +138,4 @@ No migration files. The database is brought in line with the code on boot.
 Send `Authorization: Bearer <token>`, and optionally `X-Branch-Id` to act at a
 specific branch.
 
-npm run seed:superadmin -- --email=admin@ratnagrid.com --password='Admin@123456789' --name='SAdmin'
+npm run seed:superadmin -- --email=admin@swarnay.com --password='Admin@123456789' --name='SAdmin'

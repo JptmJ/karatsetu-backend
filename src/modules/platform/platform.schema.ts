@@ -9,20 +9,23 @@
  */
 import { defineTable } from '../../core/db/schema/registry.js';
 import { col } from '../../core/db/schema/columns.js';
-import { SUPER_ADMIN } from './roles.js';
+import { PLATFORM_ROLE_CODES } from './roles.js';
 
 export const platformUserTable = defineTable({
   name: 'platform_user',
   module: 'platform',
   tenantScoped: false,
   softDelete: true,
-  comment: 'The super admin. Exactly one row, seeded from the CLI — never created through the API.',
+  comment: 'Platform operators. One row today — the super admin, seeded from the CLI, never created through the API.',
   columns: {
     email: col.text({ notNull: true, unique: true }),
     full_name: col.text({ notNull: true }),
     password_hash: col.text({ notNull: true }),
-    /** Always 'super_admin'. Kept as a column so a second tier stays possible. */
-    role: col.enum([SUPER_ADMIN.code], { notNull: true, default: "'super_admin'" }),
+    /**
+     * One of the four platform roles. Only `super_admin` has an account today;
+     * the other three are enforceable the moment one is seeded.
+     */
+    role: col.enum(PLATFORM_ROLE_CODES, { notNull: true, default: "'super_admin'" }),
     phone: col.text(),
     is_active: col.bool({ notNull: true, default: 'true' }),
     last_login_at: col.timestamptz(),

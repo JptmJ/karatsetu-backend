@@ -57,7 +57,7 @@ function generate(): string {
   const lines: string[] = [];
 
   lines.push(`/**
- * RatnaGrid API client — GENERATED, DO NOT EDIT BY HAND.
+ * Swarnay API client — GENERATED, DO NOT EDIT BY HAND.
  *
  * Regenerate with \`npm run gen:client\` in the backend, then copy this file
  * into the frontend. Every type here comes from the schema that validates the
@@ -74,10 +74,10 @@ export interface ApiError {
 }
 
 /** Thrown by every client method when the server returns a non-2xx response. */
-export class RatnaGridApiError extends Error {
+export class SwarnayApiError extends Error {
   constructor(readonly status: number, readonly error: ApiError) {
     super(error.message);
-    this.name = 'RatnaGridApiError';
+    this.name = 'SwarnayApiError';
   }
   /** Field-level messages from a 400, ready to drop onto a form. */
   get fieldErrors(): Array<{ field: string; message: string }> {
@@ -127,7 +127,7 @@ export function createClient(options: ClientOptions) {
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       if (response.status === 401) options.onUnauthorized?.();
-      throw new RatnaGridApiError(
+      throw new SwarnayApiError(
         response.status,
         (payload as { error?: ApiError })?.error ?? { code: 'internal_error', message: response.statusText },
       );
@@ -177,13 +177,13 @@ export function createClient(options: ClientOptions) {
   lines.push(`  };
 }
 
-export type RatnaGridClient = ReturnType<typeof createClient>;
+export type SwarnayClient = ReturnType<typeof createClient>;
 `);
 
   return lines.join('');
 }
 
-const target = resolve(process.argv[2] ?? 'generated/ratnagrid-client.ts');
+const target = resolve(process.argv[2] ?? 'generated/swarnay-client.ts');
 mkdirSync(dirname(target), { recursive: true });
 writeFileSync(target, generate(), 'utf8');
 console.log(`Client written to ${target} (${allRoutes().length} endpoints).`);

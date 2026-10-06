@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { randomUUID } from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { ZodError, type ZodType } from 'zod';
 import { runWithContext, type RequestContext } from '../context/request-context.js';
 import { AppError, ForbiddenError, UnauthorizedError, ValidationError } from '../errors/app-error.js';
@@ -10,6 +11,7 @@ import { logger } from '../util/logger.js';
 import { isProduction } from '../config/env.js';
 
 import { effectiveGrants, getUserAccess, resolveBranch, type UserAccess } from '../../modules/identity/access.service.js';
+import { assertCanWrite, loadLiveSession, supportAccess } from '../../modules/platform/support-session.service.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -29,6 +31,62 @@ export const requestId: RequestHandler = (req, res, next) => {
 };
 
 /**
+ * Which kind of token this is, read without verifying — only to pick the branch
+ * that then verifies it properly. Routing on an unverified claim is safe
+ * because nothing is trusted until the chosen branch has checked the signature.
+ */
+const peekScope = (token: string): string | undefined => {
+  try {
+    return (jwt.decode(token) as { scope?: string } | null)?.scope;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A platform operator working inside a tenant through a support session.
+ *
+ * The session row is re-read on every request, so ending a session or letting
+ * it lapse locks the operator out at once rather than whenever the token would
+ * have expired. `userId` stays null: an operator has no `app_user` row, which is
+ * exactly why this cannot reuse the tenant path.
+ */
+async function authenticateSupport(token: string, req: Request, next: NextFunction): Promise<void> {
+  const session = await loadLiveSession(token);
+  assertCanWrite(session, req.method);
+
+  const rawBranch = (req.headers['x-branch-id'] as string | undefined)?.trim();
+  if (rawBranch && !UUID_RE.test(rawBranch)) {
+    return next(new ValidationError('X-Branch-Id must be a branch UUID, or left off entirely.'));
+  }
+
+  const access = await supportAccess(session);
+  const branchId = rawBranch ?? access.defaultBranchId;
+
+  const context: RequestContext = {
+    requestId: (req as Request & { requestId: string }).requestId ?? randomUUID(),
+    tenantId: session.tenantId,
+    // No staff member did this. Audit rows carry the session id instead.
+    userId: null,
+    branchId,
+    roles: ['support'],
+    // Full reach inside the window — debugging a shop means seeing what they
+    // see. Mutations are gated by `assertCanWrite`, not by permission strings.
+    permissions: new Set(['*']),
+    support: {
+      sessionId: session.id, operatorId: session.operatorId,
+      canWrite: session.canWrite, endsAt: session.endsAt,
+    },
+  };
+
+  req.ctx = context;
+  // `/api/me` and the services under it are built around a staff identity, so
+  // the session supplies a stand-in rather than every one of them special-casing.
+  req.accessInfo = access;
+  runWithContext(context, () => next());
+}
+
+/**
  * Reads the token, builds the request context, and runs the rest of the request
  * inside it. From here on every database call is automatically tenant-scoped.
  */
@@ -36,8 +94,17 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return next(new UnauthorizedError('Sign in to continue.'));
 
+  const raw = header.slice(7);
+  if (peekScope(raw) === 'support') {
+    try {
+      return await authenticateSupport(raw, req, next);
+    } catch (err) {
+      return next(err);
+    }
+  }
+
   try {
-    const claims = verifyAccessToken(header.slice(7));
+    const claims = verifyAccessToken(raw);
     const access = await getUserAccess(claims.tenantId, claims.sub, claims.tv);
 
     const rawBranch = (req.headers['x-branch-id'] as string | undefined)?.trim();

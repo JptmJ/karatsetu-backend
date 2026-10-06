@@ -25,7 +25,7 @@ async function ensureTestFixtures(): Promise<void> {
     gstin: '27AABCT0000A1Z1',
     stateCode: '27',
     owner: {
-      email: 'owner@test.karatsetu.com',
+      email: 'owner@test.swarnay.com',
       fullName: 'Test Owner',
       password: 'password123',
     },

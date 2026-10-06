@@ -1,5 +1,5 @@
 /**
- * Super admin sign-in.
+ * Platform operator sign-in.
  *
  * Separate from tenant sign-in on purpose: a platform operator has no tenant
  * code to give, and the token they receive carries different claims. Keeping
@@ -13,7 +13,7 @@ import { env } from '../../core/config/env.js';
 import { UnauthorizedError } from '../../core/errors/app-error.js';
 import { newId } from '../../core/util/id.js';
 import { hashPassword, verifyPassword } from '../identity/auth.service.js';
-import { SUPER_ADMIN, type PlatformRoleCode } from './roles.js';
+import { platformPermissionsFor, platformRole, type PlatformRoleCode } from './roles.js';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
@@ -27,11 +27,11 @@ export interface PlatformClaims {
 }
 
 export const signPlatformToken = (claims: PlatformClaims): string =>
-  jwt.sign(claims, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_TTL as never, issuer: 'ratnagrid-platform' });
+  jwt.sign(claims, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_TTL as never, issuer: 'swarnay-platform' });
 
 export function verifyPlatformToken(token: string): PlatformClaims {
   try {
-    const claims = jwt.verify(token, env.JWT_SECRET, { issuer: 'ratnagrid-platform' }) as PlatformClaims;
+    const claims = jwt.verify(token, env.JWT_SECRET, { issuer: 'swarnay-platform' }) as PlatformClaims;
     if (claims.scope !== 'platform') throw new Error('not a platform token');
     return claims;
   } catch {
@@ -88,7 +88,11 @@ export async function platformLogin(
       throw rejection;
     }
 
-    const permissions = [...SUPER_ADMIN.permissions];
+    // Resolved from this operator's own role, not assumed to be super admin —
+    // the four platform roles carry very different permission sets.
+    const role = platformRole(user.role);
+    if (!role) throw new UnauthorizedError('This account has an unrecognised role. Contact the platform owner.');
+    const permissions = platformPermissionsFor(user.role);
 
     await tx.query(
       `update platform_user set last_login_at = now(), failed_login_count = 0, locked_until = null where id = $1`,
@@ -107,7 +111,7 @@ export async function platformLogin(
     return {
       accessToken: signPlatformToken({ sub: user.id, scope: 'platform', role: user.role, permissions }),
       refreshToken,
-      user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role, roleName: SUPER_ADMIN.name },
+      user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role, roleName: role.name },
       permissions,
     };
   });
@@ -127,7 +131,7 @@ export async function platformRefresh(refreshToken: string): Promise<{ accessTok
     return {
       accessToken: signPlatformToken({
         sub: row.platform_user_id, scope: 'platform', role: row.role,
-        permissions: [...SUPER_ADMIN.permissions],
+        permissions: platformPermissionsFor(row.role),
       }),
     };
   });

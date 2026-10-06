@@ -133,6 +133,18 @@ export async function describeSession(tx: Tx, access: UserAccess, branchId: stri
     ...effectiveGrants(access, branchId),
     modules: catalogFor(shop.kind, states),
     theme: shop.theme ?? { preset_key: 'deep-forest', css_variables: {}, logo_url: null },
+    /*
+     * Present only when a platform operator is inside this business. The app
+     * uses it to show its support banner, so a shopkeeper can always tell an
+     * ordinary sign-in from someone from Swarnay looking at their data.
+     */
+    support: tx.context.support
+      ? {
+          sessionId: tx.context.support.sessionId,
+          canWrite: tx.context.support.canWrite,
+          endsAt: tx.context.support.endsAt,
+        }
+      : null,
   };
 }
 

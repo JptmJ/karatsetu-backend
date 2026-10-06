@@ -1,4 +1,4 @@
-# RatnaGrid — Code & Database Structure
+# Swarnay — Code & Database Structure
 
 A plain-language tour of how the backend is laid out and what each table is for.
 For the full column-by-column reference, see **[DATABASE.md](DATABASE.md)** —
@@ -82,15 +82,15 @@ returns nothing rather than someone else's data.
 
 | Table | What it holds |
 |---|---|
-| `platform_user` | The single super admin. **No tenant** — they run the platform. Seeded from the CLI, never creatable through the API. |
+| `platform_user` | Platform operators. **No tenant** — they run the platform. One row today, the super admin, seeded from the CLI and never creatable through the API. |
 | `platform_refresh_token` | Their sessions. |
 | `platform_audit_log` | Every super-admin action: who created which tenant, when. |
 | `tenant` | One row per jewellery business. Everything else points here. |
 | `app_user` | Staff inside a business. |
-| *(roles)* | Not a table — the four roles live in code, and `app_user.role_code` says which one a person holds. |
+| `role` / `user_role` | Seeded per business from the fixed templates in code. `user_role` says who holds which, and at which branch. |
 | `refresh_token` | Staff sessions. |
-| `audit_log` | Actions inside one tenant. |
-| `support_session` | A time-boxed window where an operator can see into a tenant. |
+| `audit_log` | Actions inside one tenant. `support_session_id` is set when an operator did it. |
+| `support_session` | A time-boxed window where an operator can see into a tenant. Holds the session token’s hash; checked on every request. |
 
 ### What the business is set up as
 
@@ -208,33 +208,94 @@ admin covers all of them. Both shapes are allowed, and they can be mixed: a
 business may have one all-branches admin plus a dedicated admin at a busy
 branch.
 
-This is enforced by a partial unique index rather than a service check, so it
-holds even against a direct `INSERT`:
+This is enforced in `assertBranchAdminFree` (platform provisioning), not by a
+database constraint. It cannot be an index: the rule spans `user_role` rows and
+treats a null branch as *all* branches rather than *no* branch, and "all
+branches" has to collide with every branch at once. An earlier version of this
+document described a partial unique index that was never built; the check is the
+only thing holding the rule, so it has to stay on every path that assigns a
+role.
 
-```sql
-unique index ux_app_user_one_admin_per_branch
-  on app_user (tenant_id, default_branch_id) nulls not distinct
-  where role_code = 'admin' and is_active = true and deleted_at is null
-```
+## Roles
 
-`nulls not distinct` is what makes the all-branches slot (a null branch) collide
-with itself, so one index covers both halves of the rule.
+One platform operator, and three kinds of role inside a business. A platform
+token is refused by every tenant route and a tenant token by every platform
+route, so the only way from the console into a business's data is a support
+session.
 
-### The four roles
+### The platform operator
 
-| Role | Code | What they do | Limit |
+One role, `super_admin`, holding `*`. One account, seeded by
+`npm run seed:superadmin`, never creatable through the API — the account that
+reaches every tenant is not something a form should be able to multiply. Routes
+still declare a `permission:` for documentation; `*` satisfies all of them, and
+a test asserts it.
+
+### Inside a business
+
+| Kind | Code | What it is | Limit |
 |---|---|---|---|
-| **Branch Admin** | `admin` | Runs a branch: billing, orders, stock, old gold, rates, reports, settings. | One per branch |
-| **Sales Executive** | `sales` | Bills customers, books orders, takes old gold in. | — |
-| **Accountant** | `accountant` | Books, GST, reports. Read-only on operations. | — |
-| **Store Keeper** | `storekeeper` | Receives goods, tags pieces, moves stock. | — |
+| **Owner** | `owner` | The proprietor. Everything, every branch. | One per branch |
+| **Branch Admin** | `admin` | Runs a branch: billing, orders, stock, old gold, rates, reports, and the shop's own branch list. Can switch a staff account off. | One per branch |
+| **Staff** | *(named per business)* | Everyone else. Named and given permissions per business. | — |
 
-Roles live in code, not in a table. A user holds exactly one, stored as
-`app_user.role_code` — which is what makes the one-admin-per-branch rule
-expressible as a constraint at all.
+Only `owner` and `admin` are seeded, from `TENANT_ROLES`. **Staff roles are not
+templates.** The super admin names one per business and ticks exactly what it
+reaches, because one shop's "Accountant" handles billing and another's handles
+billing and tagging — a fixed ladder cannot express that, and guessing a seeded
+set would be a guess about how that shop is run.
 
-The only admin in a business cannot be deactivated: the shop would be left with
-nobody able to run it.
+`role.role_type` says which kind a row is. Owner and admin are refused edits:
+narrowing an owner would lock a shop out of its own books, and an admin that
+cannot run a branch is not an admin.
+
+A user holds one role, through a `user_role` row carrying the branch it applies
+at. Only the super admin assigns it. The only admin in a business cannot be
+deactivated: the shop would be left with nobody able to run it.
+
+### What a staff role may be given
+
+`permissionTree()` arranges the permission catalog as module → group → action,
+and the console's role builder ticks it. It is built from the live routes, so it
+cannot offer a switch the API does not enforce — the thing that would otherwise
+turn the builder into a screen of decorative toggles. Ticking a whole module
+grants its wildcard (`pos.*`) rather than every leaf, so a role granted "all of
+Billing" still means that when billing endpoints are added later.
+
+`app_user.role_code` is a dead column. It once held a fixed role name and is now
+plain text; roles live in `user_role`.
+
+## Branches
+
+One path, `tenancy/branch.service.ts`, used by the console and by the shop's own
+Masters screen alike. There used to be two, and they disagreed: the console
+seeded a branch's stock locations and the Masters screen did not, so a branch
+added from inside the business had nowhere to put stock and its first sale would
+have failed.
+
+A branch arrives with the locations its kind needs — Counter, Vault and Window
+for a showroom; Vault and Production Floor for a factory. Numbering needs
+nothing: a business's series are shared across branches, and split per branch
+only when the number format contains `{BRANCH}`.
+
+`tenant.max_branches` is how many that business may have, as sold. Null means no
+limit, which is where every tenant starts. It is checked on both paths, counts
+branches that still exist including deactivated ones — otherwise a shop could
+park a branch to reclaim the slot — and a limit below the current count is
+allowed, which stops further additions without closing a branch they trade from.
+
+## Support sessions
+
+The one path from a platform operator to a tenant's data, since a platform token
+reaches no tenant route. `POST /api/platform/support-sessions` mints a third kind
+of token — `scope: 'support'`, handled by `authenticateSupport` — and the
+session row is re-read on every request, so closing a session locks the operator
+out at once instead of whenever the token would lapse. Read-only is the default
+and refuses anything that is not a GET; writing needs `platform.support.write`.
+
+An operator has no `app_user` row, so the session supplies a stand-in identity
+(`supportAccess`) for `/api/me` and the services below it, while `ctx.userId`
+stays null and every audit row carries `support_session_id` instead.
 
 ## Conventions
 

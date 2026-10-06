@@ -1,7 +1,7 @@
-# RatnaGrid Backend — Working Rules
+# Swarnay Backend — Working Rules
 
 Loaded automatically by Claude Code. The same content is in
-`docs/RATNAGRID-PROMPT.md` for attaching to other tools.
+`docs/SWARNAY-PROMPT.md` for attaching to other tools.
 
 These rules keep the API, `/dev-docs` and the generated frontend client from
 drifting apart. Nothing here is optional.
@@ -82,7 +82,7 @@ New error code? Add it to `src/core/docs/error-catalog.ts` with the
 npm run gen:client
 ```
 
-Then copy `generated/ratnagrid-client.ts` into the frontend. The diff in that
+Then copy `generated/swarnay-client.ts` into the frontend. The diff in that
 file *is* the change the frontend needs.
 
 ### 6. Verify before declaring done

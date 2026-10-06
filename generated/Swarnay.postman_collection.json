@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "RatnaGrid API",
-    "_postman_id": "ratnagrid-api-collection",
-    "description": "# RatnaGrid API\n\nGenerated from the running server on 2026-09-30.\n216 endpoints.\n\n## Start here\n\n1. Set `baseUrl` — it defaults to the deployed backend.\n2. **Super admin work:** run `Platform Operator → POST platform/auth/login`.\n   The token is saved automatically into `platformToken`.\n3. **Shop staff work:** run `Settings → POST auth/login` with a `tenantCode`.\n   That token is saved into `token`, and the branch into `branchId`.\n\nEvery other request picks the right token up by itself.\n\n## Why two logins\n\nA super admin has no tenant, so they sign in with just email and password.\nShop staff belong to one business, so they also send `tenantCode` — that is\nwhat tells the server which shop `rajesh@gmail.com` works at.\n\n## Variables\n\n- `baseUrl` — the server\n- `platformToken` / `token` — filled in by the two logins\n- `tenantId`, `branchId`, `id` — fill these in as you go\n- `today`, `nowIso` — set automatically before each request",
+    "name": "Swarnay API",
+    "_postman_id": "swarnay-api-collection",
+    "description": "# Swarnay API\n\nGenerated from the running server on 2026-10-04.\n218 endpoints.\n\n## Start here\n\n1. Set `baseUrl` — it defaults to the deployed backend.\n2. **Super admin work:** run `Platform Operator → POST platform/auth/login`.\n   The token is saved automatically into `platformToken`.\n3. **Shop staff work:** run `Settings → POST auth/login` with a `tenantCode`.\n   That token is saved into `token`, and the branch into `branchId`.\n\nEvery other request picks the right token up by itself.\n\n## Why two logins\n\nA super admin has no tenant, so they sign in with just email and password.\nShop staff belong to one business, so they also send `tenantCode` — that is\nwhat tells the server which shop `rajesh@gmail.com` works at.\n\n## Variables\n\n- `baseUrl` — the server\n- `platformToken` / `token` — filled in by the two logins\n- `tenantId`, `branchId`, `id` — fill these in as you go\n- `today`, `nowIso` — set automatically before each request",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -184,7 +184,7 @@
                 }
               ]
             },
-            "description": "Every super-admin action, newest first.\n\n**Permission:** `platform.tenants.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Audit entries."
+            "description": "Every super-admin action, newest first.\n\n**Permission:** `platform.audit.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Audit entries."
           },
           "response": []
         },
@@ -261,32 +261,6 @@
           "response": []
         },
         {
-          "name": "GET platform/feature-flags",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{platformToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/platform/feature-flags",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "platform",
-                "feature-flags"
-              ],
-              "query": []
-            },
-            "description": "Rows with a null tenant are global defaults; a tenant row overrides the default for that tenant.\n\n**Permission:** `platform.flags.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Flags."
-          },
-          "response": []
-        },
-        {
           "name": "GET platform/me",
           "request": {
             "method": "GET",
@@ -308,7 +282,7 @@
               ],
               "query": []
             },
-            "description": "There is exactly one super admin and it is seeded from the command line — there is no endpoint to create another.\n\n**Permission:** none\n**Auth:** super admin token\n\n**Responses**\n- `200` — The operator."
+            "description": "What this operator may actually do, so a panel can hide what they cannot reach rather than letting them find a 403. Only `super_admin` has an account today and it is seeded from the command line — there is no endpoint that creates an operator.\n\n**Permission:** none\n**Auth:** super admin token\n\n**Responses**\n- `200` — The operator."
           },
           "response": []
         },
@@ -339,6 +313,32 @@
           "response": []
         },
         {
+          "name": "GET platform/permission-tree",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/permission-tree",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "permission-tree"
+              ],
+              "query": []
+            },
+            "description": "What the role builder ticks. Built from the live routes, so it cannot offer a switch the API does not enforce — if a permission is here, granting it genuinely grants something.\n\n`module` is the top level (Billing, Stock). `groups` are the areas within it, and a group whose key equals the module is that module’s own actions rather than a sub-area. `wildcard` on each level is the string to grant for \"all of this\".\n\n**Permission:** `platform.tenants.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — The tree."
+          },
+          "response": []
+        },
+        {
           "name": "GET platform/roles",
           "request": {
             "method": "GET",
@@ -360,7 +360,7 @@
               ],
               "query": []
             },
-            "description": "Four roles, fixed in code. Only you assign them — nobody inside a jewellery business can create or change a user. `isBranchAdmin` marks the role that is limited to one holder per branch.\n\n**Permission:** none\n**Auth:** super admin token\n\n**Responses**\n- `200` — Platform and tenant roles."
+            "description": "One platform role, holding everything. Inside a business there are three kinds: `owner`, `admin` and `staff`. Only the first two are seeded — staff roles are named and given their permissions per business, because one shop’s accountant is not another’s. `isBranchAdmin` marks the role limited to one holder per branch.\n\n**Permission:** none\n**Auth:** super admin token\n\n**Responses**\n- `200` — Platform and tenant roles."
           },
           "response": []
         },
@@ -391,6 +391,51 @@
           "response": []
         },
         {
+          "name": "GET platform/support-sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/support-sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "support-sessions"
+              ],
+              "query": [
+                {
+                  "key": "tenantId",
+                  "value": "{{tenantId}}",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "openOnly",
+                  "value": "false",
+                  "disabled": true,
+                  "description": "Only sessions still running."
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "This is the record a tenant is shown when they ask who looked at their data. `action_count` is how many audited changes were made inside the window.\n\n**Permission:** `platform.support.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Sessions, newest first."
+          },
+          "response": []
+        },
+        {
           "name": "POST platform/support-sessions",
           "request": {
             "method": "POST",
@@ -416,7 +461,7 @@
               ],
               "query": []
             },
-            "description": "Time-boxed access into one tenant. Read-only unless `canWrite` is set, and every action during the window is written to the platform audit log — so “who looked at my data” is always answerable with exactly what and when.\n\n**Permission:** `platform.support.create`\n**Auth:** super admin token\n\n**Responses**\n- `201` — Session opened.\n- `403` — Not a platform operator.",
+            "description": "The only way a platform role reaches business data. Returns a `token` to send as `Authorization: Bearer` against ordinary tenant endpoints — it is shown once and stored only as a hash, so a lost token means opening a new session.\n\nRead-only unless `canWrite` is set. The session row is checked on every request, so ending it locks the operator out at once rather than when the token would have expired. Every action inside the window is tagged with the session in the tenant’s own audit log.\n\n**Permission:** `platform.support.create`\n**Auth:** super admin token\n\n**Responses**\n- `201` — Session opened.\n- `403` — Write access asked for without `platform.support.write`.\n- `404` — No such tenant.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tenantId\": \"{{tenantId}}\",\n  \"reason\": \"Reason for the change\",\n  \"durationMinutes\": 120,\n  \"canWrite\": false\n}",
@@ -426,6 +471,34 @@
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "POST platform/support-sessions/:id/end",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/support-sessions/{{id}}/end",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "support-sessions",
+                "{{id}}",
+                "end"
+              ],
+              "query": []
+            },
+            "description": "The operator’s next request is refused. Closing also discards the token, so it cannot be reused.\n\n**Permission:** `platform.support.end`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Closed.\n- `400` — Already closed.\n- `404` — No such session."
           },
           "response": []
         },
@@ -515,7 +588,7 @@
             "description": "One call sets up everything a business needs to start: the tenant, its chart of accounts, purities, numbering series, the five roles, the head user (Admin) and the first branch with its stock locations. A half-created tenant is worse than none, so this does the lot.\n\n**Permission:** `platform.tenants.create`\n**Auth:** super admin token\n\n**Responses**\n- `201` — Tenant ready to use.\n- `400` — Invalid code or a password under 8 characters.\n- `409` — That tenant code is taken.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"CODE01\",\n  \"legalName\": \"Example name\",\n  \"displayName\": \"Example name\",\n  \"kind\": \"retailer\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\",\n  \"stateCode\": \"CODE01\",\n  \"admin\": {\n    \"email\": \"someone@example.com\",\n    \"fullName\": \"Example name\",\n    \"password\": \"changeme123\",\n    \"phone\": \"9820011223\"\n  },\n  \"branch\": {\n    \"code\": \"CODE01\",\n    \"name\": \"Example name\",\n    \"kind\": \"showroom\",\n    \"city\": \"text\",\n    \"state\": \"text\",\n    \"stateCode\": \"CODE01\"\n  },\n  \"modules\": [\n    {\n      \"key\": \"text\",\n      \"licence\": \"included\",\n      \"trialDays\": 30\n    }\n  ]\n}",
+              "raw": "{\n  \"code\": \"CODE01\",\n  \"legalName\": \"Example name\",\n  \"displayName\": \"Example name\",\n  \"kind\": \"retailer\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\",\n  \"stateCode\": \"CODE01\",\n  \"maxBranches\": \"text\",\n  \"admin\": {\n    \"email\": \"someone@example.com\",\n    \"fullName\": \"Example name\",\n    \"password\": \"changeme123\",\n    \"phone\": \"9820011223\"\n  },\n  \"branch\": {\n    \"code\": \"CODE01\",\n    \"name\": \"Example name\",\n    \"kind\": \"showroom\",\n    \"city\": \"text\",\n    \"state\": \"text\",\n    \"stateCode\": \"CODE01\"\n  },\n  \"modules\": [\n    {\n      \"key\": \"text\",\n      \"licence\": \"included\",\n      \"trialDays\": 30\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -548,7 +621,7 @@
               ],
               "query": []
             },
-            "description": "One tenant with its branches, users and module licences\n\n**Permission:** `platform.tenants.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Everything the tenant detail screen needs.\n- `404` — No such tenant."
+            "description": "The staff list is included only for a role holding `platform.users.view`. A Billing Admin can see the business and its licences without seeing who works there.\n\n**Permission:** `platform.tenants.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Everything the tenant detail screen needs.\n- `404` — No such tenant."
           },
           "response": []
         },
@@ -579,10 +652,10 @@
               ],
               "query": []
             },
-            "description": "Setting `status` to `suspended` blocks every user of that tenant from signing in.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Updated.\n- `404` — No such tenant.",
+            "description": "Setting `status` to `suspended` blocks every user of that tenant from signing in. Their data is untouched.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Updated.\n- `404` — No such tenant.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"displayName\": \"Example name\",\n  \"legalName\": \"Example name\",\n  \"status\": \"trial\",\n  \"kind\": \"manufacturer\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\"\n}",
+              "raw": "{\n  \"displayName\": \"Example name\",\n  \"legalName\": \"Example name\",\n  \"status\": \"trial\",\n  \"kind\": \"manufacturer\",\n  \"gstin\": \"27AABCU9603R1ZM\",\n  \"pan\": \"AABCU9603R\",\n  \"maxBranches\": \"text\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -676,6 +749,146 @@
           "response": []
         },
         {
+          "name": "GET platform/tenants/:id/roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/tenants/{{id}}/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "tenants",
+                "{{id}}",
+                "roles"
+              ],
+              "query": []
+            },
+            "description": "Owner and Branch Admin are seeded and fixed. Everything else is a staff role you named and gave permissions to. `user_count` is how many people hold each.\n\n**Permission:** `platform.tenants.view`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Roles with their permissions."
+          },
+          "response": []
+        },
+        {
+          "name": "POST platform/tenants/:id/roles",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/tenants/{{id}}/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "tenants",
+                "{{id}}",
+                "roles"
+              ],
+              "query": []
+            },
+            "description": "The code is derived from the name. Permissions must come from `GET /api/platform/permission-tree` — anything else is refused, so a role cannot be given a right that nothing enforces.\n\nOnly staff roles can be created: Owner and Branch Admin already exist and are fixed.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `201` — Created.\n- `400` — An unknown permission, or a reserved name.\n- `409` — This business already has a role with that name.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"description\": \"text\",\n  \"permissions\": [\n    \"text\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE platform/tenants/:id/roles/:roleId",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/tenants/{{id}}/roles/{{roleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "tenants",
+                "{{id}}",
+                "roles",
+                "{{roleId}}"
+              ],
+              "query": []
+            },
+            "description": "Delete a staff role nobody holds\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `204` — Deleted.\n- `422` — Still held by somebody, or a fixed role."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH platform/tenants/:id/roles/:roleId",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/tenants/{{id}}/roles/{{roleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "tenants",
+                "{{id}}",
+                "roles",
+                "{{roleId}}"
+              ],
+              "query": []
+            },
+            "description": "Send the complete permission list, not a delta. Everyone holding the role is signed back in against the new list immediately rather than at token expiry.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Updated.\n- `404` — No such role.\n- `422` — Owner and Branch Admin are fixed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example name\",\n  \"description\": \"text\",\n  \"permissions\": [\n    \"text\"\n  ],\n  \"isActive\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "POST platform/tenants/:id/users",
           "request": {
             "method": "POST",
@@ -703,7 +916,7 @@
               ],
               "query": []
             },
-            "description": "Only you can do this — nobody inside the business can create users. Give `branchId` to place the person at one branch; leave it out and they cover all branches. A branch has exactly one admin, so creating a second one for the same branch is refused with `409` naming whoever already holds the slot.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `201` — User created.\n- `409` — Email already used here, or that branch already has an admin.",
+            "description": "Only you can do this — nobody inside the business can create users. Give `branchId` to place the person at one branch; leave it out and they cover all branches. A branch has exactly one admin, so creating a second one for the same branch is refused with `409` naming whoever already holds the slot.\n\n**Permission:** `platform.users.create`\n**Auth:** super admin token\n\n**Responses**\n- `201` — User created.\n- `409` — Email already used here, or that branch already has an admin.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"someone@example.com\",\n  \"phone\": \"9820011223\",\n  \"fullName\": \"Example name\",\n  \"password\": \"changeme123\",\n  \"roleCode\": \"sales\",\n  \"role\": \"text\",\n  \"branchId\": \"{{branchId}}\"\n}",
@@ -745,16 +958,46 @@
               ],
               "query": []
             },
-            "description": "Moving someone to `admin`, or moving an existing admin to another branch, is refused if that branch already has one. The only admin in a business cannot be deactivated — the shop would be left with nobody able to run it.\n\n**Permission:** `platform.tenants.update`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Updated.\n- `409` — That branch already has an admin.\n- `422` — Would leave the business with no admin.",
+            "description": "Moving someone to `admin`, or moving an existing admin to another branch, is refused if that branch already has one. The only admin in a business cannot be deactivated — the shop would be left with nobody able to run it.\n\nName and contact editing lives here because it has no tenant-side equivalent: a shop cannot edit its own staff, so without this a misspelled name could never be corrected.\n\n**Permission:** `platform.users.update`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Updated.\n- `409` — That branch already has an admin.\n- `422` — Would leave the business with no admin.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"roleCode\": \"CODE01\",\n  \"role\": \"text\",\n  \"branchId\": \"{{branchId}}\",\n  \"isActive\": false\n}",
+              "raw": "{\n  \"roleCode\": \"CODE01\",\n  \"role\": \"text\",\n  \"branchId\": \"{{branchId}}\",\n  \"isActive\": false,\n  \"fullName\": \"Example name\",\n  \"email\": \"someone@example.com\",\n  \"phone\": \"9820011223\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "POST platform/tenants/:id/users/:userId/reset-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/platform/tenants/{{id}}/users/{{userId}}/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform",
+                "tenants",
+                "{{id}}",
+                "users",
+                "{{userId}}",
+                "reset-password"
+              ],
+              "query": []
+            },
+            "description": "The recovery path for a locked-out shop, and the only one: staff are yours to manage, so the tenant-side reset no longer exists. The password is returned once and never stored in readable form. They are signed out everywhere and must set a new password at next sign-in.\n\n**Permission:** `platform.users.reset_password`\n**Auth:** super admin token\n\n**Responses**\n- `200` — Reset.\n- `404` — No such user."
           },
           "response": []
         },
@@ -898,7 +1141,7 @@
               ],
               "query": []
             },
-            "description": "Every permission a role can be given, grouped by module\n\n**Permission:** `settings.roles.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Catalog."
+            "description": "Reference only. Roles are fixed in code, so nothing here can be assigned or combined into a new role from inside a business.\n\n**Permission:** `settings.roles.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Catalog."
           },
           "response": []
         },
@@ -929,128 +1172,7 @@
               ],
               "query": []
             },
-            "description": "This business's roles, their permissions and how many people hold each\n\n**Permission:** `settings.roles.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Roles."
-          },
-          "response": []
-        },
-        {
-          "name": "POST settings/roles",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/settings/roles",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "settings",
-                "roles"
-              ],
-              "query": []
-            },
-            "description": "Create a role\n\n**Permission:** `settings.roles.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Created.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"description\": \"text\",\n  \"permissions\": [\n    \"text\"\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "DELETE settings/roles/:id",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/settings/roles/{{id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "settings",
-                "roles",
-                "{{id}}"
-              ],
-              "query": []
-            },
-            "description": "Delete a custom role that nobody holds\n\n**Permission:** `settings.roles.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Deleted."
-          },
-          "response": []
-        },
-        {
-          "name": "PUT settings/roles/:id",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/settings/roles/{{id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "settings",
-                "roles",
-                "{{id}}"
-              ],
-              "query": []
-            },
-            "description": "Changing permissions takes effect for everyone holding the role within a minute.\n\n**Permission:** `settings.roles.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Example name\",\n  \"description\": \"text\",\n  \"permissions\": [\n    \"text\"\n  ],\n  \"isActive\": false\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
+            "description": "Fixed in code and seeded per business. A shop can see what each role can do; only the super admin decides who holds one.\n\n**Permission:** `settings.roles.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Roles."
           },
           "response": []
         },
@@ -1181,175 +1303,7 @@
                 }
               ]
             },
-            "description": "Who works in this business, and their roles at each branch\n\n**Permission:** `settings.users.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Staff."
-          },
-          "response": []
-        },
-        {
-          "name": "POST settings/users",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/settings/users",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "settings",
-                "users"
-              ],
-              "query": []
-            },
-            "description": "Leave `password` empty to generate a temporary one — it is returned once and the user must change it at first sign-in.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Created.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Example name\",\n  \"email\": \"someone@example.com\",\n  \"phone\": \"9820011223\",\n  \"password\": \"changeme123\",\n  \"defaultBranchId\": \"{{defaultBranchId}}\",\n  \"assignments\": [\n    {\n      \"roleId\": \"{{roleId}}\",\n      \"branchId\": \"{{branchId}}\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "PATCH settings/users/:id",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/settings/users/{{id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "settings",
-                "users",
-                "{{id}}"
-              ],
-              "query": []
-            },
-            "description": "Edit a staff member's name, contact or default branch\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Example name\",\n  \"email\": \"someone@example.com\",\n  \"phone\": \"9820011223\",\n  \"defaultBranchId\": \"{{defaultBranchId}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "POST settings/users/:id/reset-password",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/settings/users/{{id}}/reset-password",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "settings",
-                "users",
-                "{{id}}",
-                "reset-password"
-              ],
-              "query": []
-            },
-            "description": "Signs them out everywhere and unlocks the account. The temporary password is returned once.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Reset."
-          },
-          "response": []
-        },
-        {
-          "name": "PUT settings/users/:id/roles",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Branch-Id",
-                "value": "{{branchId}}",
-                "description": "Optional — act at one branch."
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/settings/users/{{id}}/roles",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "settings",
-                "users",
-                "{{id}}",
-                "roles"
-              ],
-              "query": []
-            },
-            "description": "Send the complete list. Takes effect within a minute.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"assignments\": [\n    {\n      \"roleId\": \"{{roleId}}\",\n      \"branchId\": \"{{branchId}}\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
+            "description": "Staff are created, named and given their access by the super admin. From inside the business the list is read-only, apart from switching someone off — see `POST /api/settings/users/:id/status`.\n\n**Permission:** `settings.users.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Staff."
           },
           "response": []
         },
@@ -1386,7 +1340,7 @@
               ],
               "query": []
             },
-            "description": "Deactivating signs them out everywhere immediately.\n\n**Permission:** `settings.users.manage`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.",
+            "description": "The one change a business may make to its own people, because somebody leaving at short notice should not wait on us. Deactivating signs them out everywhere immediately.\n\nEverything else about a staff member — creating them, their name, their role, what it reaches — stays with the super admin. An owner cannot be deactivated here, and nobody can switch off their own account.\n\n**Permission:** `settings.users.status`\n**Auth:** shop staff token\n\n**Responses**\n- `204` — Saved.\n- `404` — No such person.\n- `422` — Your own account, or the business owner.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"isActive\": false\n}",
@@ -5462,6 +5416,12 @@
                   "description": ""
                 },
                 {
+                  "key": "search",
+                  "value": "text",
+                  "disabled": true,
+                  "description": "Return or bill number, customer name or mobile."
+                },
+                {
                   "key": "cursor",
                   "value": "text",
                   "disabled": true,
@@ -8582,7 +8542,7 @@
               ],
               "query": []
             },
-            "description": "Returns an access token and the whole session, so the app can render straight away. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: \"include\"`. After 20 failed attempts in a minute from one network for one shop, further attempts are refused for the rest of that minute.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — Signed in.\n- `401` — See `error.code`: invalid_credentials, account_locked, account_inactive, tenant_inactive, no_branch.\n- `429` — rate_limited.",
+            "description": "Returns an access token and the whole session, so the app can render straight away. The refresh token is set as the httpOnly `sw_rt` cookie; call with `credentials: \"include\"`. After 20 failed attempts in a minute from one network for one shop, further attempts are refused for the rest of that minute.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — Signed in.\n- `401` — See `error.code`: invalid_credentials, account_locked, account_inactive, tenant_inactive, no_branch.\n- `429` — rate_limited.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tenantCode\": \"CODE01\",\n  \"identifier\": \"text\",\n  \"password\": \"changeme123\",\n  \"remember\": true\n}",
@@ -8653,7 +8613,7 @@
               ],
               "query": []
             },
-            "description": "Uses the `ks_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — A fresh access token; the cookie is rotated.\n- `401` — session_expired, account_inactive or tenant_inactive — go to sign in and show the message."
+            "description": "Uses the `sw_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.\n\n**Permission:** none\n**Auth:** public\n\n**Responses**\n- `200` — A fresh access token; the cookie is rotated.\n- `401` — session_expired, account_inactive or tenant_inactive — go to sign in and show the message."
           },
           "response": []
         },
@@ -8718,7 +8678,7 @@
               ],
               "query": []
             },
-            "description": "Signs out every other device and returns a new access token for this one. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: \"include\"`.\n\n**Permission:** none\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Changed.\n- `400` — Current password is wrong, or the new one is the same.",
+            "description": "Signs out every other device and returns a new access token for this one. The refresh token is set as the httpOnly `sw_rt` cookie; call with `credentials: \"include\"`.\n\n**Permission:** none\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Changed.\n- `400` — Current password is wrong, or the new one is the same.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"currentPassword\": \"changeme123\",\n  \"newPassword\": \"changeme123\"\n}",
@@ -9602,6 +9562,100 @@
               "query": []
             },
             "description": "Rupees on Sundry Creditors, fine metal per metal (with its average carrying rate), and unbilled inwards.\n\n**Permission:** `pos.purchase.view`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — The balance."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "core",
+      "description": "",
+      "item": [
+        {
+          "name": "POST private-screen/password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/private-screen/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "private-screen",
+                "password"
+              ],
+              "query": []
+            },
+            "description": "Change the private screen password\n\n**Permission:** `settings.config.update`\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Changed.\n- `422` — Current password wrong.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"changeme123\",\n  \"newPassword\": \"changeme123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST private-screen/unlock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Branch-Id",
+                "value": "{{branchId}}",
+                "description": "Optional — act at one branch."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/private-screen/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "private-screen",
+                "unlock"
+              ],
+              "query": []
+            },
+            "description": "Checks the private screen password. Five wrong tries lock the user out for five minutes.\n\n**Permission:** none\n**Auth:** shop staff token\n\n**Responses**\n- `200` — Right password.\n- `422` — Wrong password, or locked out.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"changeme123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }

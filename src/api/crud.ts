@@ -46,6 +46,8 @@ type Row = Record<string, unknown>;
 export interface CrudHooks {
   /** Validate / normalise before insert. Return what to insert. */
   beforeCreate?: (tx: Tx, values: Row) => Promise<Row> | Row;
+  /** Set up whatever the new row needs to be usable, in the same transaction. */
+  afterCreate?: (tx: Tx, created: Row, values: Row) => Promise<void> | void;
   /** Validate / normalise before update. `current` is the row as it is now. */
   beforeUpdate?: (tx: Tx, values: Row, current: Row) => Promise<Row> | Row;
   /** Throw to refuse the delete, or tidy related rows first. */
@@ -172,6 +174,7 @@ export function defineCrud(o: CrudOptions): void {
       const row = await transaction(async (tx) => {
         const values = o.hooks?.beforeCreate ? await o.hooks.beforeCreate(tx, req.body as Row) : (req.body as Row);
         const created = await repo<Row>(tx, o.table).insert(values);
+        if (o.hooks?.afterCreate) await o.hooks.afterCreate(tx, created, values);
         await recordAudit(tx, `${o.table}.create`, o.table, String(created.id), values);
         return created;
       });

@@ -27,11 +27,11 @@ const LOGIN_DAY = '2026-09-28';
  * a rewrite in production), which keeps the cookie first-party everywhere,
  * including Safari.
  */
-const COOKIE = 'ks_rt';
+const COOKIE = 'sw_rt';
 const cookieOptions = { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/api' } as const;
 
 const readRefreshCookie = (req: Request): string | undefined =>
-  req.headers.cookie?.match(/(?:^|;\s*)ks_rt=([A-Za-z0-9_-]+)/)?.[1];
+  req.headers.cookie?.match(/(?:^|;\s*)sw_rt=([A-Za-z0-9_-]+)/)?.[1];
 
 function sendTokens(res: Response, tokens: Tokens): string {
   res.cookie(COOKIE, tokens.refreshToken, {
@@ -61,9 +61,14 @@ const session = z.object({
     subModules: z.array(z.object({ key: z.string(), name: z.string(), status: z.string() })),
   })).describe('Modules this shop may see. Absent means never shown.'),
   theme: z.object({ preset_key: z.string(), css_variables: record, logo_url: z.string().nullable() }),
+  support: z.object({
+    sessionId: uuid, canWrite: z.boolean(), endsAt: z.string(),
+  }).nullable().describe(
+    'Non-null only when a Swarnay operator is inside this business through a support session. Show the support banner while it is set.',
+  ),
 });
 const accessToken = z.string().describe('Send as `Authorization: Bearer <token>`. Lives 15 minutes; keep it in memory only.');
-const cookieNote = 'The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: "include"`.';
+const cookieNote = 'The refresh token is set as the httpOnly `sw_rt` cookie; call with `credentials: "include"`.';
 
 defineRoute({
   method: 'post', path: '/api/auth/login', module: 'identity', auth: false,
@@ -99,7 +104,7 @@ defineRoute({
 defineRoute({
   method: 'post', path: '/api/auth/refresh', module: 'identity', auth: false,
   summary: 'Get a new access token',
-  description: 'Uses the `ks_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.',
+  description: 'Uses the `sw_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.',
   responses: [
     { status: 200, description: 'A fresh access token; the cookie is rotated.', schema: z.object({ accessToken }) },
     { status: 401, description: 'session_expired, account_inactive or tenant_inactive — go to sign in and show the message.', schema: errorEnvelope },

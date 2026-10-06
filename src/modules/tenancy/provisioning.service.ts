@@ -270,7 +270,7 @@ export async function createMasterDefaults(tx: Tx): Promise<void> {
     );
   }
 
-  const note = 'Default seeded by KaratSetu — have your CA confirm before your first invoice.';
+  const note = 'Default seeded by Swarnay — have your CA confirm before your first invoice.';
   const gst = [
     { code: '7113', type: 'hsn', component: 'metal', rate: '3', description: 'Articles of jewellery of precious metal' },
     { code: '7108', type: 'hsn', component: 'metal', rate: '3', description: 'Gold — bullion, bars, unwrought' },

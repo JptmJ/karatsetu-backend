@@ -18,7 +18,7 @@ import { logger } from './core/util/logger.js';
 async function main(): Promise<void> {
   logger.info(
     { env: env.NODE_ENV, tables: allTables().length, schemaSync: syncMode },
-    'Starting KaratSetu backend',
+    'Starting Swarnay backend',
   );
 
   await checkConnection();

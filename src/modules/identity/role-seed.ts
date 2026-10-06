@@ -10,12 +10,13 @@ export async function seedSystemRoles(tx: Tx): Promise<Map<string, string>> {
   const ids = new Map<string, string>();
   for (const template of TENANT_ROLES) {
     const role = await tx.one<{ id: string; inserted: boolean }>(
-      `insert into role (id, tenant_id, code, name, description, is_system, created_by, updated_by)
-       values ($1, $2, $3, $4, $5, true, $6, $6)
+      `insert into role (id, tenant_id, code, name, role_type, description, is_system, created_by, updated_by)
+       values ($1, $2, $3, $4, $5, $6, true, $7, $7)
        on conflict (tenant_id, code) where deleted_at is null
-       do update set name = role.name
+       do update set name = role.name, role_type = excluded.role_type
        returning id, (xmax = 0) as inserted`,
-      [newId(), tx.context.tenantId, template.code, template.name, template.description, tx.context.userId],
+      [newId(), tx.context.tenantId, template.code, template.name, template.type,
+       template.description, tx.context.userId],
     );
     ids.set(template.code, role.id);
 

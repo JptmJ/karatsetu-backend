@@ -1,11 +1,11 @@
 /**
- * RatnaGrid API client — GENERATED, DO NOT EDIT BY HAND.
+ * Swarnay API client — GENERATED, DO NOT EDIT BY HAND.
  *
  * Regenerate with `npm run gen:client` in the backend, then copy this file
  * into the frontend. Every type here comes from the schema that validates the
  * real request, so a mismatch between this file and the server is impossible.
  *
- * Generated 2026-09-30T14:46:48.069Z from 216 endpoints.
+ * Generated 2026-10-04T12:01:23.837Z from 218 endpoints.
  */
 
 export interface ApiError {
@@ -16,10 +16,10 @@ export interface ApiError {
 }
 
 /** Thrown by every client method when the server returns a non-2xx response. */
-export class RatnaGridApiError extends Error {
+export class SwarnayApiError extends Error {
   constructor(readonly status: number, readonly error: ApiError) {
     super(error.message);
-    this.name = 'RatnaGridApiError';
+    this.name = 'SwarnayApiError';
   }
   /** Field-level messages from a 400, ready to drop onto a form. */
   get fieldErrors(): Array<{ field: string; message: string }> {
@@ -69,7 +69,7 @@ export function createClient(options: ClientOptions) {
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       if (response.status === 401) options.onUnauthorized?.();
-      throw new RatnaGridApiError(
+      throw new SwarnayApiError(
         response.status,
         (payload as { error?: ApiError })?.error ?? { code: 'internal_error', message: response.statusText },
       );
@@ -82,7 +82,7 @@ export function createClient(options: ClientOptions) {
     /**
      * Sign in
      *
-     * Returns an access token and the whole session, so the app can render straight away. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: "include"`. After 20 failed attempts in a minute from one network for one shop, further attempts are refused for the rest of that minute.
+     * Returns an access token and the whole session, so the app can render straight away. The refresh token is set as the httpOnly `sw_rt` cookie; call with `credentials: "include"`. After 20 failed attempts in a minute from one network for one shop, further attempts are refused for the rest of that minute.
      * `POST /api/auth/login`
      */
     postAuthLogin(body: {
@@ -147,6 +147,12 @@ export function createClient(options: ClientOptions) {
           css_variables: Record<string, unknown>;
           logo_url: unknown;
         };
+        /** Non-null only when a Swarnay operator is inside this business through a support session. Show the support banner while it is set. */
+        support: {
+          sessionId: string;
+          canWrite: boolean;
+          endsAt: string;
+        } | null;
       };
     }> {
       return request<{
@@ -203,13 +209,19 @@ export function createClient(options: ClientOptions) {
           css_variables: Record<string, unknown>;
           logo_url: unknown;
         };
+        /** Non-null only when a Swarnay operator is inside this business through a support session. Show the support banner while it is set. */
+        support: {
+          sessionId: string;
+          canWrite: boolean;
+          endsAt: string;
+        } | null;
       };
     }>('POST', "/api/auth/login", { body });
     },
     /**
      * Get a new access token
      *
-     * Uses the `ks_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.
+     * Uses the `sw_rt` cookie and rotates it. Two calls within 30 seconds with the same cookie (a retry, or two tabs) both succeed; an old cookie presented later ends the whole sign-in.
      * `POST /api/auth/refresh`
      */
     postAuthRefresh(): Promise<{
@@ -233,7 +245,7 @@ export function createClient(options: ClientOptions) {
     /**
      * Change your own password
      *
-     * Signs out every other device and returns a new access token for this one. The refresh token is set as the httpOnly `ks_rt` cookie; call with `credentials: "include"`.
+     * Signs out every other device and returns a new access token for this one. The refresh token is set as the httpOnly `sw_rt` cookie; call with `credentials: "include"`.
      * `POST /api/me/password`
      */
     postMePassword(body: {
@@ -305,6 +317,12 @@ export function createClient(options: ClientOptions) {
         css_variables: Record<string, unknown>;
         logo_url: unknown;
       };
+      /** Non-null only when a Swarnay operator is inside this business through a support session. Show the support banner while it is set. */
+      support: {
+        sessionId: string;
+        canWrite: boolean;
+        endsAt: string;
+      } | null;
     }> {
       return request<{
       user: {
@@ -357,6 +375,12 @@ export function createClient(options: ClientOptions) {
         css_variables: Record<string, unknown>;
         logo_url: unknown;
       };
+      /** Non-null only when a Swarnay operator is inside this business through a support session. Show the support banner while it is set. */
+      support: {
+        sessionId: string;
+        canWrite: boolean;
+        endsAt: string;
+      } | null;
     }>('GET', "/api/me");
     },
     /**
@@ -2577,6 +2601,8 @@ export function createClient(options: ClientOptions) {
      */
     getPosReturns(query?: {
       customerId?: string;
+      /** Return or bill number, customer name or mobile. */
+      search?: string;
       cursor?: string;
       limit?: number;
     }): Promise<{
@@ -3088,6 +3114,29 @@ export function createClient(options: ClientOptions) {
       reason: string;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', `/api/purchase/settlements/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Open the private screen
+     *
+     * Checks the private screen password. Five wrong tries lock the user out for five minutes.
+     * `POST /api/private-screen/unlock`
+     */
+    postPrivatescreenUnlock(body: {
+      password: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/private-screen/unlock", { body });
+    },
+    /**
+     * Change the private screen password
+     *
+     * `POST /api/private-screen/password`
+     * Requires `settings.config.update`.
+     */
+    postPrivatescreenPassword(body: {
+      currentPassword: string;
+      newPassword: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/private-screen/password", { body });
     },
     /**
      * Stock totals for the header cards
@@ -4002,8 +4051,9 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/accounts/karigar-ledger", { query });
     },
     /**
-     * Every permission a role can be given, grouped by module
+     * Every permission a role can hold, grouped by module
      *
+     * Reference only. Roles are fixed in code, so nothing here can be assigned or combined into a new role from inside a business.
      * `GET /api/settings/permissions`
      * Requires `settings.roles.view`.
      */
@@ -4015,8 +4065,9 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/settings/permissions");
     },
     /**
-     * This business's roles, their permissions and how many people hold each
+     * The roles in this business, their permissions and how many people hold each
      *
+     * Fixed in code and seeded per business. A shop can see what each role can do; only the super admin decides who holds one.
      * `GET /api/settings/roles`
      * Requires `settings.roles.view`.
      */
@@ -4028,49 +4079,9 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/settings/roles");
     },
     /**
-     * Create a role
-     *
-     * `POST /api/settings/roles`
-     * Requires `settings.roles.manage`.
-     */
-    postSettingsRoles(body: {
-      name: string;
-      description?: string | null;
-      permissions: Array<string>;
-    }): Promise<{
-      id: string;
-    }> {
-      return request<{
-      id: string;
-    }>('POST', "/api/settings/roles", { body });
-    },
-    /**
-     * Rename a role, change its permissions, or disable it
-     *
-     * Changing permissions takes effect for everyone holding the role within a minute.
-     * `PUT /api/settings/roles/:id`
-     * Requires `settings.roles.manage`.
-     */
-    putSettingsRolesById(params: { id: string }, body: {
-      name?: string;
-      description?: string | null;
-      permissions?: Array<string>;
-      isActive?: boolean;
-    }): Promise<void> {
-      return request<void>('PUT', `/api/settings/roles/${encodeURIComponent(params.id)}`, { body });
-    },
-    /**
-     * Delete a custom role that nobody holds
-     *
-     * `DELETE /api/settings/roles/:id`
-     * Requires `settings.roles.manage`.
-     */
-    deleteSettingsRolesById(params: { id: string }): Promise<void> {
-      return request<void>('DELETE', `/api/settings/roles/${encodeURIComponent(params.id)}`);
-    },
-    /**
      * Who works in this business, and their roles at each branch
      *
+     * Staff are created, named and given their access by the super admin. From inside the business the list is read-only, apart from switching someone off — see `POST /api/settings/users/:id/status`.
      * `GET /api/settings/users`
      * Requires `settings.users.view`.
      */
@@ -4087,87 +4098,18 @@ export function createClient(options: ClientOptions) {
     }>('GET', "/api/settings/users", { query });
     },
     /**
-     * Add a staff member
+     * Switch a staff account on or off
      *
-     * Leave `password` empty to generate a temporary one — it is returned once and the user must change it at first sign-in.
-     * `POST /api/settings/users`
-     * Requires `settings.users.manage`.
-     */
-    postSettingsUsers(body: {
-      fullName: string;
-      email?: string | null;
-      phone?: string | null;
-      password?: string;
-      defaultBranchId?: string | null;
-      assignments: Array<{
-        roleId: string;
-        /** Null = every branch. */
-        branchId: string | null;
-      }>;
-    }): Promise<{
-      id: string;
-      temporaryPassword: unknown;
-    }> {
-      return request<{
-      id: string;
-      temporaryPassword: unknown;
-    }>('POST', "/api/settings/users", { body });
-    },
-    /**
-     * Edit a staff member's name, contact or default branch
-     *
-     * `PATCH /api/settings/users/:id`
-     * Requires `settings.users.manage`.
-     */
-    patchSettingsUsersById(params: { id: string }, body: {
-      fullName?: string;
-      email?: string | null;
-      phone?: string | null;
-      defaultBranchId?: string | null;
-    }): Promise<void> {
-      return request<void>('PATCH', `/api/settings/users/${encodeURIComponent(params.id)}`, { body });
-    },
-    /**
-     * Replace a staff member's roles
-     *
-     * Send the complete list. Takes effect within a minute.
-     * `PUT /api/settings/users/:id/roles`
-     * Requires `settings.users.manage`.
-     */
-    putSettingsUsersByIdRoles(params: { id: string }, body: {
-      assignments: Array<{
-        roleId: string;
-        /** Null = every branch. */
-        branchId: string | null;
-      }>;
-    }): Promise<void> {
-      return request<void>('PUT', `/api/settings/users/${encodeURIComponent(params.id)}/roles`, { body });
-    },
-    /**
-     * Activate or deactivate a staff member
-     *
-     * Deactivating signs them out everywhere immediately.
+     * The one change a business may make to its own people, because somebody leaving at short notice should not wait on us. Deactivating signs them out everywhere immediately.
+     * 
+     * Everything else about a staff member — creating them, their name, their role, what it reaches — stays with the super admin. An owner cannot be deactivated here, and nobody can switch off their own account.
      * `POST /api/settings/users/:id/status`
-     * Requires `settings.users.manage`.
+     * Requires `settings.users.status`.
      */
     postSettingsUsersByIdStatus(params: { id: string }, body: {
       isActive: boolean;
     }): Promise<void> {
       return request<void>('POST', `/api/settings/users/${encodeURIComponent(params.id)}/status`, { body });
-    },
-    /**
-     * Give a staff member a new temporary password
-     *
-     * Signs them out everywhere and unlocks the account. The temporary password is returned once.
-     * `POST /api/settings/users/:id/reset-password`
-     * Requires `settings.users.manage`.
-     */
-    postSettingsUsersByIdResetpassword(params: { id: string }): Promise<{
-      temporaryPassword: string;
-    }> {
-      return request<{
-      temporaryPassword: string;
-    }>('POST', `/api/settings/users/${encodeURIComponent(params.id)}/reset-password`);
     },
     /**
      * Price lines exactly as billing will — nothing is saved
@@ -4279,9 +4221,9 @@ export function createClient(options: ClientOptions) {
       return request<void>('POST', "/api/platform/auth/logout", { body });
     },
     /**
-     * The fixed role set
+     * The role templates
      *
-     * Four roles, fixed in code. Only you assign them — nobody inside a jewellery business can create or change a user. `isBranchAdmin` marks the role that is limited to one holder per branch.
+     * One platform role, holding everything. Inside a business there are three kinds: `owner`, `admin` and `staff`. Only the first two are seeded — staff roles are named and given their permissions per business, because one shop’s accountant is not another’s. `isBranchAdmin` marks the role limited to one holder per branch.
      * `GET /api/platform/roles`
      */
     getPlatformRoles(): Promise<{
@@ -4289,10 +4231,13 @@ export function createClient(options: ClientOptions) {
         code: string;
         name: string;
         description: string;
+        permissions: Array<string>;
       };
+      roleTypes: Array<string>;
       tenant: Array<{
         code: string;
         name: string;
+        type: string;
         description: string;
         isBranchAdmin: boolean;
         permissions: Array<string>;
@@ -4303,15 +4248,62 @@ export function createClient(options: ClientOptions) {
         code: string;
         name: string;
         description: string;
+        permissions: Array<string>;
       };
+      roleTypes: Array<string>;
       tenant: Array<{
         code: string;
         name: string;
+        type: string;
         description: string;
         isBranchAdmin: boolean;
         permissions: Array<string>;
       }>;
     }>('GET', "/api/platform/roles");
+    },
+    /**
+     * Every permission a staff role can be given, as module → group → action
+     *
+     * What the role builder ticks. Built from the live routes, so it cannot offer a switch the API does not enforce — if a permission is here, granting it genuinely grants something.
+     * 
+     * `module` is the top level (Billing, Stock). `groups` are the areas within it, and a group whose key equals the module is that module’s own actions rather than a sub-area. `wildcard` on each level is the string to grant for "all of this".
+     * `GET /api/platform/permission-tree`
+     * Requires `platform.tenants.view`.
+     */
+    getPlatformPermissiontree(): Promise<{
+      modules: Array<{
+        key: string;
+        name: string;
+        wildcard: string;
+        groups: Array<{
+          key: string;
+          name: string;
+          wildcard: unknown;
+          permissions: Array<{
+            code: string;
+            action: string;
+            description: string;
+          }>;
+        }>;
+      }>;
+    }> {
+      return request<{
+      modules: Array<{
+        key: string;
+        name: string;
+        wildcard: string;
+        groups: Array<{
+          key: string;
+          name: string;
+          wildcard: unknown;
+          permissions: Array<{
+            code: string;
+            action: string;
+            description: string;
+          }>;
+        }>;
+      }>;
+    }>('GET', "/api/platform/permission-tree");
     },
     /**
      * The module catalog, for provisioning
@@ -4370,6 +4362,8 @@ export function createClient(options: ClientOptions) {
       pan?: string;
       /** GST state code — decides CGST+SGST vs IGST. */
       stateCode?: string;
+      /** How many branches they may have. Omit for no limit. */
+      maxBranches?: number | null;
       /** The head user. Gets the Admin role and can then create all other staff. */
       admin: {
         email: string;
@@ -4407,6 +4401,7 @@ export function createClient(options: ClientOptions) {
     /**
      * One tenant with its branches, users and module licences
      *
+     * The staff list is included only for a role holding `platform.users.view`. A Billing Admin can see the business and its licences without seeing who works there.
      * `GET /api/platform/tenants/:id`
      * Requires `platform.tenants.view`.
      */
@@ -4426,7 +4421,7 @@ export function createClient(options: ClientOptions) {
     /**
      * Update a tenant
      *
-     * Setting `status` to `suspended` blocks every user of that tenant from signing in.
+     * Setting `status` to `suspended` blocks every user of that tenant from signing in. Their data is untouched.
      * `PATCH /api/platform/tenants/:id`
      * Requires `platform.tenants.update`.
      */
@@ -4437,8 +4432,64 @@ export function createClient(options: ClientOptions) {
       kind?: "manufacturer" | "retailer" | "both";
       gstin?: string;
       pan?: string;
+      /** How many branches this business may have. Null means no limit. */
+      maxBranches?: number | null;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/platform/tenants/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * The roles this business has
+     *
+     * Owner and Branch Admin are seeded and fixed. Everything else is a staff role you named and gave permissions to. `user_count` is how many people hold each.
+     * `GET /api/platform/tenants/:id/roles`
+     * Requires `platform.tenants.view`.
+     */
+    getPlatformTenantsByIdRoles(params: { id: string }): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', `/api/platform/tenants/${encodeURIComponent(params.id)}/roles`);
+    },
+    /**
+     * Create a staff role for this business
+     *
+     * The code is derived from the name. Permissions must come from `GET /api/platform/permission-tree` — anything else is refused, so a role cannot be given a right that nothing enforces.
+     * 
+     * Only staff roles can be created: Owner and Branch Admin already exist and are fixed.
+     * `POST /api/platform/tenants/:id/roles`
+     * Requires `platform.tenants.update`.
+     */
+    postPlatformTenantsByIdRoles(params: { id: string }, body: {
+      name: string;
+      description?: string | null;
+      permissions: Array<string>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/platform/tenants/${encodeURIComponent(params.id)}/roles`, { body });
+    },
+    /**
+     * Rename a staff role, or change what it can reach
+     *
+     * Send the complete permission list, not a delta. Everyone holding the role is signed back in against the new list immediately rather than at token expiry.
+     * `PATCH /api/platform/tenants/:id/roles/:roleId`
+     * Requires `platform.tenants.update`.
+     */
+    patchPlatformTenantsByIdRolesByRoleId(params: { id: string; roleId: string }, body: {
+      name?: string;
+      description?: string | null;
+      permissions?: Array<string>;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/platform/tenants/${encodeURIComponent(params.id)}/roles/${encodeURIComponent(params.roleId)}`, { body });
+    },
+    /**
+     * Delete a staff role nobody holds
+     *
+     * `DELETE /api/platform/tenants/:id/roles/:roleId`
+     * Requires `platform.tenants.update`.
+     */
+    deletePlatformTenantsByIdRolesByRoleId(params: { id: string; roleId: string }): Promise<void> {
+      return request<void>('DELETE', `/api/platform/tenants/${encodeURIComponent(params.id)}/roles/${encodeURIComponent(params.roleId)}`);
     },
     /**
      * Add a branch to a tenant
@@ -4467,7 +4518,7 @@ export function createClient(options: ClientOptions) {
      *
      * Only you can do this — nobody inside the business can create users. Give `branchId` to place the person at one branch; leave it out and they cover all branches. A branch has exactly one admin, so creating a second one for the same branch is refused with `409` naming whoever already holds the slot.
      * `POST /api/platform/tenants/:id/users`
-     * Requires `platform.tenants.update`.
+     * Requires `platform.users.create`.
      */
     postPlatformTenantsByIdUsers(params: { id: string }, body: {
       email?: string | null;
@@ -4482,36 +4533,79 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', `/api/platform/tenants/${encodeURIComponent(params.id)}/users`, { body });
     },
     /**
-     * Change a user’s role, branch or activation
+     * Change a user’s role, branch, contact details or activation
      *
      * Moving someone to `admin`, or moving an existing admin to another branch, is refused if that branch already has one. The only admin in a business cannot be deactivated — the shop would be left with nobody able to run it.
+     * 
+     * Name and contact editing lives here because it has no tenant-side equivalent: a shop cannot edit its own staff, so without this a misspelled name could never be corrected.
      * `PATCH /api/platform/tenants/:id/users/:userId`
-     * Requires `platform.tenants.update`.
+     * Requires `platform.users.update`.
      */
     patchPlatformTenantsByIdUsersByUserId(params: { id: string; userId: string }, body: {
       roleCode?: string;
       role?: string;
-      /** Null moves them to all branches. */
+      /** Null moves them to all branches. Omit to leave their branch alone. */
       branchId?: string | null;
       isActive?: boolean;
+      fullName?: string;
+      email?: string | null;
+      phone?: unknown;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/platform/tenants/${encodeURIComponent(params.id)}/users/${encodeURIComponent(params.userId)}`, { body });
     },
     /**
-     * The signed-in super admin
+     * Give a tenant user a new temporary password
      *
-     * There is exactly one super admin and it is seeded from the command line — there is no endpoint to create another.
+     * The recovery path for a locked-out shop, and the only one: staff are yours to manage, so the tenant-side reset no longer exists. The password is returned once and never stored in readable form. They are signed out everywhere and must set a new password at next sign-in.
+     * `POST /api/platform/tenants/:id/users/:userId/reset-password`
+     * Requires `platform.users.reset_password`.
+     */
+    postPlatformTenantsByIdUsersByUserIdResetpassword(params: { id: string; userId: string }): Promise<{
+      temporaryPassword: string;
+    }> {
+      return request<{
+      temporaryPassword: string;
+    }>('POST', `/api/platform/tenants/${encodeURIComponent(params.id)}/users/${encodeURIComponent(params.userId)}/reset-password`);
+    },
+    /**
+     * The signed-in operator, with their role and permissions
+     *
+     * What this operator may actually do, so a panel can hide what they cannot reach rather than letting them find a 403. Only `super_admin` has an account today and it is seeded from the command line — there is no endpoint that creates an operator.
      * `GET /api/platform/me`
      */
-    getPlatformMe(): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('GET', "/api/platform/me");
+    getPlatformMe(): Promise<{
+      id: string;
+      email: string;
+      full_name: string;
+      role: string;
+      roleName: string;
+      roleDescription: string;
+      permissions: Array<string>;
+      phone: unknown;
+      is_active: boolean;
+      last_login_at: unknown;
+      created_at: string;
+    }> {
+      return request<{
+      id: string;
+      email: string;
+      full_name: string;
+      role: string;
+      roleName: string;
+      roleDescription: string;
+      permissions: Array<string>;
+      phone: unknown;
+      is_active: boolean;
+      last_login_at: unknown;
+      created_at: string;
+    }>('GET', "/api/platform/me");
     },
     /**
      * Platform audit log
      *
      * Every super-admin action, newest first.
      * `GET /api/platform/audit`
-     * Requires `platform.tenants.view`.
+     * Requires `platform.audit.view`.
      */
     getPlatformAudit(query?: {
       tenantId?: string;
@@ -4572,9 +4666,11 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('PUT', `/api/platform/tenants/${encodeURIComponent(params.id)}/modules/${encodeURIComponent(params.moduleKey)}`, { body });
     },
     /**
-     * Start a support impersonation session
+     * Start a support session into a tenant
      *
-     * Time-boxed access into one tenant. Read-only unless `canWrite` is set, and every action during the window is written to the platform audit log — so “who looked at my data” is always answerable with exactly what and when.
+     * The only way a platform role reaches business data. Returns a `token` to send as `Authorization: Bearer` against ordinary tenant endpoints — it is shown once and stored only as a hash, so a lost token means opening a new session.
+     * 
+     * Read-only unless `canWrite` is set. The session row is checked on every request, so ending it locks the operator out at once rather than when the token would have expired. Every action inside the window is tagged with the session in the tenant’s own audit log.
      * `POST /api/platform/support-sessions`
      * Requires `platform.support.create`.
      */
@@ -4582,32 +4678,49 @@ export function createClient(options: ClientOptions) {
       tenantId: string;
       reason: string;
       durationMinutes?: number;
-      /** Write access is a deliberate escalation. */
+      /** Needs `platform.support.write`. A deliberate escalation. */
       canWrite?: boolean;
     }): Promise<{
       session: Record<string, unknown>;
+      token: string;
       endsAt: string;
     }> {
       return request<{
       session: Record<string, unknown>;
+      token: string;
       endsAt: string;
     }>('POST', "/api/platform/support-sessions", { body });
     },
     /**
-     * Feature flags in effect
+     * Support sessions, open and past
      *
-     * Rows with a null tenant are global defaults; a tenant row overrides the default for that tenant.
-     * `GET /api/platform/feature-flags`
-     * Requires `platform.flags.view`.
+     * This is the record a tenant is shown when they ask who looked at their data. `action_count` is how many audited changes were made inside the window.
+     * `GET /api/platform/support-sessions`
+     * Requires `platform.support.view`.
      */
-    getPlatformFeatureflags(): Promise<{
-      flags: Array<Record<string, unknown>>;
+    getPlatformSupportsessions(query?: {
+      tenantId?: string;
+      /** Only sessions still running. */
+      openOnly?: boolean;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
     }> {
       return request<{
-      flags: Array<Record<string, unknown>>;
-    }>('GET', "/api/platform/feature-flags");
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/platform/support-sessions", { query });
+    },
+    /**
+     * Close a support session now
+     *
+     * The operator’s next request is refused. Closing also discards the token, so it cannot be reused.
+     * `POST /api/platform/support-sessions/:id/end`
+     * Requires `platform.support.end`.
+     */
+    postPlatformSupportsessionsByIdEnd(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/platform/support-sessions/${encodeURIComponent(params.id)}/end`);
     },
   };
 }
 
-export type RatnaGridClient = ReturnType<typeof createClient>;
+export type SwarnayClient = ReturnType<typeof createClient>;

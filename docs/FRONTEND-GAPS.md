@@ -14,8 +14,8 @@ route list. All 59 of them match. Nothing the screens ask for is missing.
 
 The frontend is already pointed at `https://karatsetu-backend.onrender.com` and
 signs in properly. You can see it in the code: messages like *"Connected to
-Karatsetu Live Cloud Backend"* and *"Live GST sales invoices synchronized with
-Karatsetu backend"*.
+Swarnay Live Cloud Backend"* and *"Live GST sales invoices synchronized with
+Swarnay backend"*.
 
 **One thing to note:** the deployed backend is a few days behind. It reports
 106 endpoints; the code now has 122. Deploy again to pick up today's work.

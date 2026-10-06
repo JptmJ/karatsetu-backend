@@ -13,5 +13,7 @@ export async function recordAudit(
     entity_id: entityId,
     changes: changes === undefined ? null : JSON.stringify(changes),
     request_id: tx.context.requestId,
+    // Null for ordinary staff work; set when a support session is doing this.
+    support_session_id: tx.context.support?.sessionId ?? null,
   });
 }

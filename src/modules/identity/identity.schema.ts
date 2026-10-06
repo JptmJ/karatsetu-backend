@@ -1,7 +1,6 @@
 /** Users, roles and permissions (Module 12.3). */
 import { defineTable } from '../../core/db/schema/registry.js';
 import { col } from '../../core/db/schema/columns.js';
-import { TENANT_ROLE_CODES } from '../platform/roles.js';
 
 export const userTable = defineTable({
   name: 'app_user',
@@ -20,8 +19,17 @@ export const userTable = defineTable({
      * join table would buy nothing and would make "one admin per branch"
      * impossible to express as a constraint.
      */
-    /** DEPRECATED — read only by the role backfill. Dropped once backfill has run everywhere. */
-    role_code: col.enum(TENANT_ROLE_CODES, { notNull: true, default: "'sales'" }),
+    /**
+     * DEPRECATED. Who holds which role lives in `user_role`, and has since the
+     * backfill. Nothing reads this any more.
+     *
+     * It is plain text rather than a fixed list because a staff role's code is
+     * whatever the super admin named it — "counter_staff", "bill_desk" — so
+     * there is no set of values to check against. It kept the old four-role
+     * list, which is why every sync tried and failed to narrow it once those
+     * roles were retired.
+     */
+    role_code: col.text({ comment: 'Legacy. Roles live in user_role; kept only so old rows are not lost.' }),
     token_version: col.int({ notNull: true, default: '0', comment: 'Bumped on role change, deactivation or password reset — older access tokens stop working.' }),
     must_change_password: col.bool({ notNull: true, default: 'false' }),
     password_changed_at: col.timestamptz(),
@@ -92,11 +100,18 @@ export const auditLogTable = defineTable({
     changes: col.jsonb(),
     request_id: col.text(),
     ip_address: col.text(),
+    /**
+     * Set when the action was taken by a platform operator inside a support
+     * session, so "support touched my data" is answerable with exactly what and
+     * when. Null for ordinary staff actions, which is almost all of them.
+     */
+    support_session_id: col.fk('support_session'),
   },
   indexes: [
     { columns: ['at'] },
     { columns: ['entity_table', 'entity_id'] },
     { columns: ['user_id', 'at'] },
+    { columns: ['support_session_id'] },
   ],
 });
 
@@ -104,10 +119,22 @@ export const roleTable = defineTable({
   name: 'role',
   module: 'identity',
   softDelete: true,
-  comment: 'Tenant-defined role. System roles are seeded from templates and cannot be deleted.',
+  comment: 'A role inside one business. owner and admin are seeded; staff roles are named per business by the super admin.',
   columns: {
     code: col.text({ notNull: true }),
     name: col.text({ notNull: true }),
+    /**
+     * What kind of role this is.
+     *
+     *   owner  the proprietor — everything, every branch
+     *   admin  runs a branch — everything within it
+     *   staff  anything else, with permissions chosen per business
+     *
+     * Only `staff` rows have permissions worth editing: the other two are fixed
+     * templates, and letting someone narrow `owner` would lock a shop out of
+     * its own books.
+     */
+    role_type: col.enum(['owner', 'admin', 'staff'], { notNull: true, default: "'staff'" }),
     description: col.text(),
     is_system: col.bool({ notNull: true, default: 'false' }),
     is_active: col.bool({ notNull: true, default: 'true' }),
