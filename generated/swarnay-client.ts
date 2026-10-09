@@ -5,7 +5,7 @@
  * into the frontend. Every type here comes from the schema that validates the
  * real request, so a mismatch between this file and the server is impossible.
  *
- * Generated 2026-10-04T12:01:23.837Z from 218 endpoints.
+ * Generated 2026-10-09T08:17:29.847Z from 258 endpoints.
  */
 
 export interface ApiError {
@@ -1895,100 +1895,98 @@ export function createClient(options: ClientOptions) {
     }>('POST', `/api/master/import/${encodeURIComponent(params.kind)}`, { body });
     },
     /**
-     * The Kanban stages for every order type
+     * Orders settings in force
      *
-     * Each order type has its own stage sequence — a repair genuinely has different steps from a wedding order. Read this rather than hardcoding stage names; a tenant can override the list.
+     * How orders are priced (the rate held at booking, for how long, and whether staff may switch it), the smallest advance, how a repair is billed, what happens to metal lost above the ghat, and the delivery warning.
+     * `GET /api/orders/settings`
+     * Requires `orders.view`.
+     */
+    getOrdersSettings(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/orders/settings");
+    },
+    /**
+     * The steps each order type walks
+     *
+     * A repair genuinely has different steps from a wedding order. Read this rather than hardcoding them; a shop can set its own.
      * `GET /api/orders/pipelines`
      * Requires `orders.view`.
      */
     getOrdersPipelines(): Promise<{
-      pipelines: Array<{
-        orderType: "booking" | "custom" | "repair" | "wedding" | "corporate";
-        label: string;
-        stages: Array<{
-          key: string;
-          label: string;
-          terminal?: boolean;
-          external?: boolean;
-        }>;
-      }>;
+      pipelines: Array<Record<string, unknown>>;
     }> {
       return request<{
-      pipelines: Array<{
-        orderType: "booking" | "custom" | "repair" | "wedding" | "corporate";
-        label: string;
-        stages: Array<{
-          key: string;
-          label: string;
-          terminal?: boolean;
-          external?: boolean;
-        }>;
-      }>;
+      pipelines: Array<Record<string, unknown>>;
     }>('GET', "/api/orders/pipelines");
     },
     /**
-     * The Kanban board for one order type
+     * The board for one order type
      *
-     * Active orders grouped into their stage columns, ready to render.
+     * Live orders grouped into the step they are on, with what is overdue or due soon and how many jobs are still with a karigar.
      * `GET /api/orders/board`
      * Requires `orders.view`.
      */
     getOrdersBoard(query?: {
       orderType: "booking" | "custom" | "repair" | "wedding" | "corporate";
       branchId?: string;
-    }): Promise<{
-      orderType: string;
-      stages: Array<{
-        key: string;
-        label: string;
-        orders: Array<Record<string, unknown>>;
-      }>;
-    }> {
-      return request<{
-      orderType: string;
-      stages: Array<{
-        key: string;
-        label: string;
-        orders: Array<Record<string, unknown>>;
-      }>;
-    }>('GET', "/api/orders/board", { query });
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/orders/board", { query });
     },
     /**
-     * List orders
+     * Orders
      *
      * `GET /api/orders`
      * Requires `orders.view`.
      */
     getOrders(query?: {
       orderType?: "booking" | "custom" | "repair" | "wedding" | "corporate";
-      stage?: string;
       status?: "draft" | "active" | "completed" | "cancelled";
+      stage?: string;
       customerId?: string;
       karigarId?: string;
-      branchId?: string;
       from?: string;
       to?: string;
-      /** Matches order number or customer name. */
+      overdue?: "true" | "false";
+      /** Order number, customer name or mobile. */
       search?: string;
+      cursor?: string;
       limit?: number;
-      offset?: number;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
+      nextCursor: unknown;
     }> {
       return request<{
       rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
+      nextCursor: unknown;
     }>('GET', "/api/orders", { query });
     },
     /**
-     * One order with everything attached
+     * The customer’s own jewellery the shop is holding
      *
-     * Lines, timeline, payments, attachments, acknowledgement and messages, in one call.
+     * Repairs and metal brought in for a new piece, across every order: the token on the paper tag, what it weighs, where it is kept and who it belongs to. Never stock — the shop does not own any of it.
+     * `GET /api/orders/custody`
+     * Requires `orders.view`.
+     */
+    getOrdersCustody(query?: {
+      status?: "received" | "with_karigar" | "ready" | "returned" | "written_off";
+      /** true = still with the shop (not yet given back). */
+      held?: "true" | "false";
+      /** Token, description, order number, customer name or mobile. */
+      search?: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/orders/custody", { query });
+    },
+    /**
+     * One order with everything on it
+     *
+     * Lines, the customer’s own items held, the history, advances, karigar jobs, attachments and messages.
      * `GET /api/orders/:id`
      * Requires `orders.view`.
      */
@@ -1996,33 +1994,31 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('GET', `/api/orders/${encodeURIComponent(params.id)}`);
     },
     /**
-     * Create an order
+     * Take an order
      *
-     * One endpoint for all five types; `orderType` decides which fields are required. Corporate orders need `companyName` and `poReference`; repairs need `repairItemDescription`. Lines are priced server-side from the rate master, so the client never has to compute GST.
+     * One endpoint for all five types; `orderType` decides what is required. A corporate order needs the company and their PO; a repair needs what was taken in. Lines are priced by the same engine the counter uses. A line with no purity or weight yet is carried as an estimate. A piece promised off the shelf is held for this order and cannot be promised twice. An advance posts as it is taken.
      * `POST /api/orders`
      * Requires `orders.create`.
      */
     postOrders(body: {
       orderType: "booking" | "custom" | "repair" | "wedding" | "corporate";
       customerId: string;
-      branchId: string;
-      orderDate: string;
-      /** Expected delivery date is required. */
+      /** The shop’s today if left out. */
+      orderDate?: string;
       expectedDeliveryDate: string;
       salespersonId?: string;
       karigarId?: string;
-      rateLockType?: "today" | "floating" | "fixed_future";
-      /** Rupees, as a string. Never a float. */
+      /** Falls back to orders.rate_lock.default. */
+      rateLockType?: "booking" | "delivery" | "fixed";
+      /** Required when the rate is fixed by agreement. */
       lockedRatePerGram?: string;
-      /** Cannot exceed the order value. */
-      advanceAmount?: string;
       lines?: Array<{
-        /** booking reserves existing stock; custom is made to order. */
+        /** booking promises a piece already in stock; custom is made to order. */
         lineMode?: "booking" | "custom";
-        /** Every line needs a title. */
         title: string;
         designSpecification?: string;
         itemId?: string | null;
+        /** A tagged piece promised off the shelf; it is held for this order. */
         pieceId?: string | null;
         purityId?: string | null;
         categoryId?: string | null;
@@ -2031,8 +2027,6 @@ export function createClient(options: ClientOptions) {
         grossWeight?: string;
         /** Grams, as a string. */
         stoneWeight?: string;
-        /** Falls back to the order’s locked rate. */
-        ratePerGram?: string;
         makingBasis?: "per_gram" | "percent" | "flat";
         makingRate?: string;
         wastagePercent?: string;
@@ -2040,12 +2034,35 @@ export function createClient(options: ClientOptions) {
         stoneAmount?: string;
         /** Rupees, as a string. Never a float. */
         discountAmount?: string;
-        gstRate?: string;
         hsnCode?: string;
         specialInstructions?: string;
+        /** For work that cannot be priced yet: what the customer was quoted. */
+        estimatedAmount?: string;
       }>;
+      /** The customer’s own jewellery left with the shop. */
+      custodyItems?: Array<{
+        description: string;
+        /** What is written on the paper tag. Taken from the order number if left out. */
+        tokenNumber?: string;
+        metalId?: string;
+        purityId?: string;
+        testedPurityPercent?: string;
+        /** Grams, as a string. */
+        grossWeight?: string;
+        /** Grams, as a string. */
+        stoneWeight?: string;
+        /** Rupees, as a string. Never a float. */
+        declaredValue?: string;
+        conditionNotes?: string;
+        whereKept?: string;
+      }>;
+      advance?: {
+        paymentMethodId: string;
+        /** Rupees, as a string. Never a float. */
+        amount: string;
+        reference?: string;
+      };
       notes?: string;
-      /** Custom orders. */
       requirementDescription?: string;
       sizeSpecifications?: string;
       /** Rupees, as a string. Never a float. */
@@ -2054,20 +2071,21 @@ export function createClient(options: ClientOptions) {
       budgetMax?: string;
       manufacturingRoute?: "in_house" | "external";
       externalManufacturerId?: string;
-      /** Required for repair orders. */
+      /** Required for a repair. */
       repairItemDescription?: string;
       repairIssueDescription?: string;
-      /** e.g. ["clasp","stone_loose"] */
       repairIssueTypes?: Array<string>;
+      /** Rupees, as a string. Never a float. */
+      repairServiceCharge?: string;
+      repairInvoiceType?: "service" | "goods";
       underWarranty?: boolean;
       originalInvoiceNumber?: string;
-      /** Wedding orders. */
       eventDate?: string;
       eventType?: string;
-      /** Required for corporate orders. */
+      /** Required for a corporate order. */
       companyName?: string;
       companyGstin?: string;
-      /** Required for corporate orders. */
+      /** Required for a corporate order. */
       poReference?: string;
       creditTerms?: "net_15" | "net_30" | "custom";
       creditTermsNote?: string;
@@ -2076,33 +2094,95 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', "/api/orders", { body });
     },
     /**
-     * Move an order to another stage
+     * Change an order that is not delivered yet
      *
-     * Moving backward is allowed but requires `reason` — it is written to the timeline and the audit stream. Reaching a terminal stage completes the order.
+     * The date, the karigar, the brief, the rate and the lines. Sending `lines` replaces all of them: the order is priced again and the holds move with it — a piece dropped is let go, a piece added is held. Changing the rate needs `orders.rate.override`. An order cannot be made worth less than what has already been taken for it.
+     * `PATCH /api/orders/:id`
+     * Requires `orders.update`.
+     */
+    patchOrdersById(params: { id: string }, body: {
+      expectedDeliveryDate?: string;
+      karigarId?: string | null;
+      notes?: string | null;
+      rateLockType?: "booking" | "delivery" | "fixed";
+      lockedRatePerGram?: string | null;
+      lines?: Array<{
+        /** booking promises a piece already in stock; custom is made to order. */
+        lineMode?: "booking" | "custom";
+        title: string;
+        designSpecification?: string;
+        itemId?: string | null;
+        /** A tagged piece promised off the shelf; it is held for this order. */
+        pieceId?: string | null;
+        purityId?: string | null;
+        categoryId?: string | null;
+        quantity?: string;
+        /** Grams, as a string. */
+        grossWeight?: string;
+        /** Grams, as a string. */
+        stoneWeight?: string;
+        makingBasis?: "per_gram" | "percent" | "flat";
+        makingRate?: string;
+        wastagePercent?: string;
+        /** Rupees, as a string. Never a float. */
+        stoneAmount?: string;
+        /** Rupees, as a string. Never a float. */
+        discountAmount?: string;
+        hsnCode?: string;
+        specialInstructions?: string;
+        /** For work that cannot be priced yet: what the customer was quoted. */
+        estimatedAmount?: string;
+      }>;
+      requirementDescription?: string | null;
+      sizeSpecifications?: string | null;
+      budgetMin?: string | null;
+      budgetMax?: string | null;
+      manufacturingRoute?: "in_house" | "external" | null;
+      externalManufacturerId?: string | null;
+      designApproval?: "pending" | "approved" | "revision_requested" | null;
+      productionStatus?: "not_started" | "sent_to_manufacturer" | "quote_received" | "in_production" | "completed" | null;
+      repairItemDescription?: string | null;
+      repairIssueDescription?: string | null;
+      repairIssueTypes?: Array<string>;
+      /** Rupees, as a string. Never a float. */
+      repairServiceCharge?: string;
+      repairInvoiceType?: "service" | "goods" | null;
+      underWarranty?: boolean;
+      originalInvoiceNumber?: string | null;
+      /** The customer agreed the repair estimate, so the work can start. */
+      estimateApproved?: {
+        byName?: string;
+      } | null;
+      eventDate?: string | null;
+      eventType?: string | null;
+      companyName?: string | null;
+      companyGstin?: string | null;
+      poReference?: string | null;
+      creditTerms?: "net_15" | "net_30" | "custom" | null;
+      creditTermsNote?: string | null;
+      brandingNotes?: string | null;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/orders/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Move an order to another step
+     *
+     * Going back a step is allowed but needs a reason, which is kept on the order’s history. Delivery is not a step: bill the order instead.
      * `POST /api/orders/:id/stage`
      * Requires `orders.update`.
      */
     postOrdersByIdStage(params: { id: string }, body: {
-      /** Must exist in this order type’s pipeline. */
       stage: string;
-      /** Required when moving backward. */
+      /** Required when going back. */
       reason?: string;
       note?: string;
-    }): Promise<{
-      order: Record<string, unknown>;
-      moved: boolean;
-      direction?: string;
-    }> {
-      return request<{
-      order: Record<string, unknown>;
-      moved: boolean;
-      direction?: string;
-    }>('POST', `/api/orders/${encodeURIComponent(params.id)}/stage`, { body });
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/orders/${encodeURIComponent(params.id)}/stage`, { body });
     },
     /**
      * Cancel an order
      *
-     * The order stays in the audit trail and leaves the active pipeline.
+     * Lets go of any piece held for it. Refused while a karigar still has metal or the customer’s own item is with the shop.
      * `POST /api/orders/:id/cancel`
      * Requires `orders.cancel`.
      */
@@ -2112,13 +2192,14 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', `/api/orders/${encodeURIComponent(params.id)}/cancel`, { body });
     },
     /**
-     * Record an advance or token payment
+     * Take an advance on an order
      *
+     * Money in, credited to the customer. The counter spends it on the bill as “Order Advance”. Payment-mode rules and the ₹2 lakh daily cash rule apply as they do at the counter.
      * `POST /api/orders/:id/payments`
      * Requires `orders.update`.
      */
     postOrdersByIdPayments(params: { id: string }, body: {
-      mode: "cash" | "card" | "upi" | "bank_transfer" | "cheque" | "emi" | "old_gold" | "scheme";
+      paymentMethodId: string;
       /** Rupees, as a string. Never a float. */
       amount: string;
       reference?: string;
@@ -2127,21 +2208,203 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', `/api/orders/${encodeURIComponent(params.id)}/payments`, { body });
     },
     /**
-     * Capture the customer acknowledgement on a repair intake
+     * Take back an advance entered by mistake
      *
-     * Required before a repair leaves the counter. Either a captured signature or a verified OTP reference — never the OTP code itself.
+     * `POST /api/orders/payments/:id/cancel`
+     * Requires `orders.update`.
+     */
+    postOrdersPaymentsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/orders/payments/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * What the counter needs to bill an order
+     *
+     * The order’s lines, the rate it is held at (and why), the credit already on the customer, and how a repair is to be billed. Nothing is written; the bill itself is made at the counter.
+     * `GET /api/orders/:id/billing`
+     * Requires `orders.view`.
+     */
+    getOrdersByIdBilling(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/orders/${encodeURIComponent(params.id)}/billing`);
+    },
+    /**
+     * Give the customer their own item back
+     *
+     * For a repair or metal the customer brought. Refused while the item is still with a karigar.
+     * `POST /api/orders/custody/:id/return`
+     * Requires `orders.update`.
+     */
+    postOrdersCustodyByIdReturn(params: { id: string }, body: {
+      returnedToName?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/orders/custody/${encodeURIComponent(params.id)}/return`, { body });
+    },
+    /**
+     * Record what the customer signed for at intake
+     *
+     * Taken before a repair leaves the counter: a signature or a verified OTP reference, never the code itself.
      * `POST /api/orders/:id/acknowledge`
      * Requires `orders.update`.
      */
     postOrdersByIdAcknowledge(params: { id: string }, body: {
       method: "signature" | "otp";
-      /** Required when method is signature. */
       signatureStorageKey?: string;
-      /** The provider’s reference, required when method is otp. */
       otpReference?: string;
       acknowledgedByName?: string;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', `/api/orders/${encodeURIComponent(params.id)}/acknowledge`, { body });
+    },
+    /**
+     * Log what was said to the customer
+     *
+     * The order’s communication log: a reminder that it is ready, a call about the estimate, a message the customer sent back. It records what the shop did — nothing here sends anything, so the status is what the staff member says happened.
+     * `POST /api/orders/:id/messages`
+     * Requires `orders.update`.
+     */
+    postOrdersByIdMessages(params: { id: string }, body: {
+      channel?: "sms" | "whatsapp" | "email" | "call" | "in_person";
+      direction?: "outbound" | "inbound";
+      message: string;
+      deliveryStatus?: "queued" | "sent" | "delivered" | "read" | "failed";
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/orders/${encodeURIComponent(params.id)}/messages`, { body });
+    },
+    /**
+     * What each karigar holds and is owed
+     *
+     * Fine metal in their hands, wages owed, and how many jobs are still out.
+     * `GET /api/karigars/balances`
+     * Requires `orders.view`.
+     */
+    getKarigarsBalances(): Promise<{
+      rows: Array<Record<string, unknown>>;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+    }>('GET', "/api/karigars/balances");
+    },
+    /**
+     * Issue work to a karigar
+     *
+     * `shop` metal leaves stock and sits against the karigar; `customer` is their own item, which never was the shop’s and so moves no money. The ghat allowance and the labour rate are fixed here, and compared against what actually comes back.
+     * `POST /api/karigars/jobs`
+     * Requires `orders.karigar`.
+     */
+    postKarigarsJobs(body: {
+      karigarId: string;
+      retailOrderId?: string;
+      kind?: "making" | "repair";
+      metalSource?: "shop" | "customer";
+      metalId: string;
+      purityId?: string;
+      dueDate?: string;
+      /** Falls back to the karigar’s own allowance. */
+      ghatPercent?: string;
+      labourBasis?: "per_gram" | "flat" | "percent";
+      labourRate?: string;
+      /** Shop metal: the lot it leaves. */
+      itemId?: string;
+      /** Shop metal: where it leaves from. */
+      locationId?: string;
+      /** Grams, as a string. */
+      grossWeight?: string;
+      /** Grams, as a string. */
+      stoneWeight?: string;
+      /** The customer’s own items going out. */
+      custodyItemIds?: Array<string>;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/karigars/jobs", { body });
+    },
+    /**
+     * Karigar jobs
+     *
+     * `GET /api/karigars/jobs`
+     * Requires `orders.view`.
+     */
+    getKarigarsJobs(query?: {
+      karigarId?: string;
+      status?: "issued" | "received" | "cancelled";
+      retailOrderId?: string;
+      overdue?: "true" | "false";
+      cursor?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      nextCursor: unknown;
+    }>('GET', "/api/karigars/jobs", { query });
+    },
+    /**
+     * One job card
+     *
+     * `GET /api/karigars/jobs/:id`
+     * Requires `orders.view`.
+     */
+    getKarigarsJobsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/karigars/jobs/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Take the work back from the karigar
+     *
+     * What came back is weighed and tested. The loss is compared with the ghat allowed: anything beyond it is recovered from the karigar’s wages or written off, as Orders settings say. Shop metal comes back into stock — tagged as a piece when `tag` is given. The customer’s own item simply becomes ready to hand back.
+     * `POST /api/karigars/jobs/:id/receive`
+     * Requires `orders.karigar`.
+     */
+    postKarigarsJobsByIdReceive(params: { id: string }, body: {
+      /** Grams, as a string. */
+      receivedGrossWeight: string;
+      /** Grams, as a string. */
+      receivedStoneWeight?: string;
+      /** Tested on what came back; the job’s purity is used otherwise. */
+      assayPercent?: string;
+      /** Worked out from the agreed basis when left out. */
+      labourAmount?: string;
+      /** Shop metal: where it goes. */
+      intoLocationId?: string;
+      tag?: {
+        itemId: string;
+        purityId: string;
+        huid?: string;
+        /** Rupees, as a string. Never a float. */
+        makingCost?: string;
+      };
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/karigars/jobs/${encodeURIComponent(params.id)}/receive`, { body });
+    },
+    /**
+     * Call a job back
+     *
+     * For work sent out by mistake. The metal returns exactly as it left.
+     * `POST /api/karigars/jobs/:id/cancel`
+     * Requires `orders.karigar`.
+     */
+    postKarigarsJobsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/karigars/jobs/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Pay a karigar their wages
+     *
+     * `POST /api/karigars/payments`
+     * Requires `orders.karigar`.
+     */
+    postKarigarsPayments(body: {
+      karigarId: string;
+      /** Rupees, as a string. Never a float. */
+      amount: string;
+      paymentMethodId: string;
+      reference?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/karigars/payments", { body });
     },
     /**
      * Old Gold settings in force
@@ -2440,7 +2703,7 @@ export function createClient(options: ClientOptions) {
     postPosCheckout(body: {
       /** Leave out for a walk-in: paid in full and under ₹2 lakh. */
       customerId?: string;
-      lines: Array<{
+      lines?: Array<{
         pieceId?: string;
         itemId?: string;
         purityId?: string;
@@ -2455,6 +2718,8 @@ export function createClient(options: ClientOptions) {
         /** Rupees, as a string. Never a float. */
         amount: string;
         reference?: string;
+        /** For a scheme tender: the matured account being spent, redeemed as this bill saves. */
+        schemeAccountId?: string;
       }>;
       /** Rupees, as a string. Never a float. */
       discount?: string;
@@ -2497,6 +2762,16 @@ export function createClient(options: ClientOptions) {
           number: string;
         };
       };
+      /** Billing a customer’s order: the pieces it holds may be sold, and saving this bill delivers the order. */
+      orderId?: string;
+      /** Labour on the bill — a repair, a polish, a resize. No metal and no stock: a SAC line at the service rate. */
+      services?: Array<{
+        description: string;
+        /** Rupees, as a string. Never a float. */
+        amount: string;
+        sacCode?: string;
+        gstPercent?: string;
+      }>;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', "/api/pos/checkout", { body });
     },
@@ -2509,7 +2784,7 @@ export function createClient(options: ClientOptions) {
      */
     postPosQuote(body: {
       customerId?: string | null;
-      lines: Array<{
+      lines?: Array<{
         pieceId?: string;
         itemId?: string;
         purityId?: string;
@@ -2521,6 +2796,14 @@ export function createClient(options: ClientOptions) {
       }>;
       /** Rupees, as a string. Never a float. */
       discount?: string;
+      orderId?: string;
+      services?: Array<{
+        description: string;
+        /** Rupees, as a string. Never a float. */
+        amount: string;
+        sacCode?: string;
+        gstPercent?: string;
+      }>;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('POST', "/api/pos/quote", { body });
     },
@@ -3116,6 +3399,628 @@ export function createClient(options: ClientOptions) {
       return request<Record<string, unknown>>('POST', `/api/purchase/settlements/${encodeURIComponent(params.id)}/cancel`, { body });
     },
     /**
+     * List scheme plans
+     *
+     * Paginated. `total` is the count before paging, for the pager.
+     * `GET /api/schemes/plans`
+     * Requires `schemes.plans.view`.
+     */
+    getSchemesPlans(query?: {
+      /** Matches code, name. */
+      search?: string;
+      is_active?: boolean;
+      /** From the previous page's nextCursor (large lists only). */
+      cursor?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+      limit?: number;
+      offset?: number;
+    }>('GET', "/api/schemes/plans", { query });
+    },
+    /**
+     * Get one scheme plan
+     *
+     * `GET /api/schemes/plans/:id`
+     * Requires `schemes.plans.view`.
+     */
+    getSchemesPlansById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/schemes/plans/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Create a scheme plan
+     *
+     * `POST /api/schemes/plans`
+     * Requires `schemes.plans.create`.
+     */
+    postSchemesPlans(body: {
+      code: string;
+      name: string;
+      description?: string;
+      metal_id: string;
+      /** The purity the grams are counted in. Left out, the purest priced purity is used. */
+      purity_id?: string | null;
+      /** weight accrues grams at each payment’s rate — the member is owed metal, not money. */
+      accrual_basis?: "rupee" | "weight";
+      tenure_months: number;
+      /** Rupees, as a string. Never a float. */
+      installment_amount?: string;
+      /** Rupees, as a string. Never a float. */
+      minimum_installment?: string;
+      is_flexible_amount?: boolean;
+      /** The classic “pay 11, get 12” is 1. */
+      bonus_installments?: string;
+      bonus_percent?: string;
+      max_missed_installments?: number;
+      making_charge_discount_percent?: string;
+      allow_partial_redemption?: boolean;
+      allow_cash_redemption?: boolean;
+      grace_period_days?: number;
+      terms_and_conditions?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/schemes/plans", { body });
+    },
+    /**
+     * Update a scheme plan
+     *
+     * Only the fields you send are changed.
+     * `PATCH /api/schemes/plans/:id`
+     * Requires `schemes.plans.update`.
+     */
+    patchSchemesPlansById(params: { id: string }, body: {
+      name?: string;
+      description?: string | null;
+      purity_id?: string | null;
+      /** Rupees, as a string. Never a float. */
+      installment_amount?: string;
+      minimum_installment?: string | null;
+      bonus_installments?: string;
+      bonus_percent?: string;
+      making_charge_discount_percent?: string;
+      max_missed_installments?: number;
+      allow_partial_redemption?: boolean;
+      allow_cash_redemption?: boolean;
+      grace_period_days?: number;
+      terms_and_conditions?: string | null;
+      is_active?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/schemes/plans/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Remove a scheme plan
+     *
+     * Soft delete — the row stays for the audit trail and disappears from lists.
+     * `DELETE /api/schemes/plans/:id`
+     * Requires `schemes.plans.delete`.
+     */
+    deleteSchemesPlansById(params: { id: string }): Promise<void> {
+      return request<void>('DELETE', `/api/schemes/plans/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Schemes settings in force
+     *
+     * Bonus, rate source, late pricing, maturity, redemption and early-closure rules. Read-only here; changed in Settings.
+     * `GET /api/schemes/settings`
+     * Requires `schemes.accounts.view`.
+     */
+    getSchemesSettings(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/schemes/settings");
+    },
+    /**
+     * What a gram costs for a scheme today
+     *
+     * The rate a weight plan would use right now, so the counter can show the member what their money buys before taking it.
+     * `GET /api/schemes/rate`
+     * Requires `schemes.accounts.view`.
+     */
+    getSchemesRate(query?: {
+      metalId: string;
+      purityId?: string;
+      onDate?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/schemes/rate", { query });
+    },
+    /**
+     * Enrol a member and write the schedule
+     *
+     * Opens the account and writes every installment up front, so “what is due this month” stays a query and the member can be handed their dates on the day they join. The plan’s terms — bonus, grace, how many months may be missed — are copied onto the account, so changing the plan later never rewrites a promise already made.
+     * `POST /api/schemes/accounts`
+     * Requires `schemes.accounts.create`.
+     */
+    postSchemesAccounts(body: {
+      schemePlanId: string;
+      customerId: string;
+      enrolledOn?: string;
+      /** Needed only for a flexible plan, or to override the plan’s amount. */
+      installmentAmount?: string;
+      dueDay?: number;
+      nomineeName?: string;
+      nomineeRelationship?: string;
+      nomineePhone?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/schemes/accounts", { body });
+    },
+    /**
+     * Scheme accounts
+     *
+     * `GET /api/schemes/accounts`
+     * Requires `schemes.accounts.view`.
+     */
+    getSchemesAccounts(query?: {
+      status?: "active" | "matured" | "redeemed" | "defaulted" | "cancelled" | "closed";
+      customerId?: string;
+      branchId?: string;
+      schemePlanId?: string;
+      search?: string;
+      /** Accounts whose maturity falls on or before this date. */
+      maturingBefore?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total?: number;
+    }>('GET', "/api/schemes/accounts", { query });
+    },
+    /**
+     * One account with its passbook
+     *
+     * Every month with its receipt and who took it, and what the account has been spent on.
+     * `GET /api/schemes/accounts/:id`
+     * Requires `schemes.accounts.view`.
+     */
+    getSchemesAccountsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/schemes/accounts/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Work the account’s totals out again
+     *
+     * Rebuilds the totals and the bonus from the installment rows, marks months that have gone past as missed, and matures the account if it is fully paid.
+     * `POST /api/schemes/accounts/:id/refresh`
+     * Requires `schemes.accounts.view`.
+     */
+    postSchemesAccountsByIdRefresh(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/schemes/accounts/${encodeURIComponent(params.id)}/refresh`);
+    },
+    /**
+     * Mature an account by hand
+     *
+     * For shops that would rather check an account before letting it be spent.
+     * `POST /api/schemes/accounts/:id/mature`
+     * Requires `schemes.maturity.update`.
+     */
+    postSchemesAccountsByIdMature(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/schemes/accounts/${encodeURIComponent(params.id)}/mature`);
+    },
+    /**
+     * Take a month’s money
+     *
+     * Settles one month, several at once, or a flexible amount. The money posts to the scheme liability (2300) as it is taken — it is owed back in gold, never income. A weight plan also works out the grams it bought at the day’s rate and carries them on 2310, which is the obligation that actually matters. Payment modes come from Masters, so reference rules, per-mode limits and the ₹2 lakh daily cash rule apply exactly as at the counter.
+     * `POST /api/schemes/accounts/:id/collect`
+     * Requires `schemes.collection.create`.
+     */
+    postSchemesAccountsByIdCollect(params: { id: string }, body: {
+      /** Left out, the oldest month still open is taken. */
+      installmentIds?: Array<string>;
+      /** A lump sum clears as many whole months as it covers. */
+      amount?: string;
+      paymentMethodId: string;
+      reference?: string;
+      docDate?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/schemes/accounts/${encodeURIComponent(params.id)}/collect`, { body });
+    },
+    /**
+     * Take back a collection entered by mistake
+     *
+     * The month goes back to due and the money is reversed with mirror entries. Nothing posted is ever deleted.
+     * `POST /api/schemes/installments/:id/cancel`
+     * Requires `schemes.collection.create`.
+     */
+    postSchemesInstallmentsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/schemes/installments/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Let a month go
+     *
+     * A goodwill call, kept with its reason. A waived month counts as settled towards maturity but adds nothing to what the member saved.
+     * `POST /api/schemes/installments/:id/waive`
+     * Requires `schemes.collection.waive`.
+     */
+    postSchemesInstallmentsByIdWaive(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/schemes/installments/${encodeURIComponent(params.id)}/waive`, { body });
+    },
+    /**
+     * Months due or already missed
+     *
+     * The collection worklist, oldest first. Drives the “scheme collections due” figure on the dashboard.
+     * `GET /api/schemes/due`
+     * Requires `schemes.collection.view`.
+     */
+    getSchemesDue(query?: {
+      onDate?: string;
+      includeMissed?: boolean;
+      branchId?: string;
+      customerId?: string;
+      limit?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      /** Rupees, as a string. Never a float. */
+      totalDue: string;
+      onDate: string;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      /** Rupees, as a string. Never a float. */
+      totalDue: string;
+      onDate: string;
+    }>('GET', "/api/schemes/due", { query });
+    },
+    /**
+     * The member’s card, as it prints
+     *
+     * Given at enrolment: every date they have to pay, the terms they were promised, and room to tick the months off. Printed later it is their passbook, because the same rows carry what was paid.
+     * `GET /api/schemes/accounts/:id/card`
+     * Requires `schemes.accounts.view`.
+     */
+    getSchemesAccountsByIdCard(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/schemes/accounts/${encodeURIComponent(params.id)}/card`);
+    },
+    /**
+     * A collection as it prints
+     *
+     * The slip handed to the member: the months it settled, the grams they bought, and where the account stands afterwards.
+     * `GET /api/schemes/receipts/:number`
+     * Requires `schemes.collection.view`.
+     */
+    getSchemesReceiptsByNumber(params: { number: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/schemes/receipts/${encodeURIComponent(params.number)}`);
+    },
+    /**
+     * Spend a matured account
+     *
+     * Releases the liability and turns it into credit the member can spend at the counter or on an order — one path for customer credit, the same one advances and old gold use. Cash only where both the plan and the shop allow it. The bonus is the shop’s cost the moment it is handed over, unless the shop shows it as a discount on the bill instead.
+     * `POST /api/schemes/accounts/:id/redeem`
+     * Requires `schemes.maturity.update`.
+     */
+    postSchemesAccountsByIdRedeem(params: { id: string }, body: {
+      /** Left out, the whole balance is used. */
+      amount?: string;
+      salesInvoiceId?: string;
+      retailOrderId?: string;
+      cashPaymentMethodId?: string;
+      docDate?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/schemes/accounts/${encodeURIComponent(params.id)}/redeem`, { body });
+    },
+    /**
+     * Close an account early
+     *
+     * A member who wants out before maturity gets back what they paid, less whatever the shop keeps, and never the bonus — the bonus is for seeing it through. The money is either handed back through a payment mode or left as the customer’s credit, as the shop’s settings say.
+     * `POST /api/schemes/accounts/:id/close`
+     * Requires `schemes.accounts.close`.
+     */
+    postSchemesAccountsByIdClose(params: { id: string }, body: {
+      reason: string;
+      settlement?: "refund" | "credit";
+      refundPaymentMethodId?: string;
+      docDate?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/schemes/accounts/${encodeURIComponent(params.id)}/close`, { body });
+    },
+    /**
+     * What a member can spend
+     *
+     * Matured accounts with a balance, read by the counter and by Orders so a scheme can pay for jewellery.
+     * `GET /api/schemes/customers/:id/credit`
+     * Requires `schemes.accounts.view`.
+     */
+    getSchemesCustomersByIdCredit(params: { id: string }): Promise<{
+      accounts: Array<Record<string, unknown>>;
+      /** Rupees, as a string. Never a float. */
+      total: string;
+    }> {
+      return request<{
+      accounts: Array<Record<string, unknown>>;
+      /** Rupees, as a string. Never a float. */
+      total: string;
+    }>('GET', `/api/schemes/customers/${encodeURIComponent(params.id)}/credit`);
+    },
+    /**
+     * What the shop owes its members
+     *
+     * Collected, bonus accrued, still owed, grams owed and the monthly run rate — the number a jeweller has to watch.
+     * `GET /api/schemes/liability`
+     * Requires `schemes.liability.view`.
+     */
+    getSchemesLiability(query?: {
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/schemes/liability", { query });
+    },
+    /**
+     * Girvi settings in force
+     *
+     * How interest is quoted and worked out, what the shop lends against, its charges, how a payment is applied, identity rules, and the notice and auction run. Read-only here; changed in Settings.
+     * `GET /api/girvi/settings`
+     * Requires `girvi.view`.
+     */
+    getGirviSettings(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/girvi/settings");
+    },
+    /**
+     * What the collateral is worth, and the most that may be lent
+     *
+     * Values the articles at the shop’s own rate — never a rate sent in from the screen — and gives the loan-to-value ceiling. Nothing is saved.
+     * `POST /api/girvi/appraise`
+     * Requires `girvi.view`.
+     */
+    postGirviAppraise(body: {
+      collateral: Array<{
+        description: string;
+        metalId: string;
+        purityId?: string | null;
+        itemCategoryId?: string | null;
+        quantity?: number;
+        /** Grams, as a string. */
+        grossWeight: string;
+        /** Grams, as a string. */
+        stoneWeight?: string;
+        /** Left out, the chosen purity’s fineness is used. */
+        testedPurityPercent?: string;
+        testMethod?: "xrf" | "touchstone" | "declared";
+        conditionNotes?: string;
+        photoStorageKey?: string;
+      }>;
+      onDate?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/girvi/appraise", { body });
+    },
+    /**
+     * Give a loan against jewellery
+     *
+     * Values the articles at the shop’s rate, caps the loan at its loan-to-value, seals the packet and hands the money over through a payment mode from Masters. The money moves from cash into a receivable; the gold is not bought and never enters stock, because it is still the borrower’s. The terms — rate, method, minimum interest, how a payment is applied — are copied onto the loan, so changing the shop’s settings later never rewrites what somebody signed.
+     * `POST /api/girvi/loans`
+     * Requires `girvi.create`.
+     */
+    postGirviLoans(body: {
+      /** Leave out for someone not on file; the borrower’s details are then required. */
+      customerId?: string;
+      borrowerName?: string;
+      borrowerPhone?: string;
+      borrowerAddress?: string;
+      borrowerIdType?: "aadhaar" | "pan" | "voter" | "driving_licence" | "passport";
+      borrowerIdNumber?: string;
+      borrowerPhotoKey?: string;
+      sanctionedOn?: string;
+      dueDate?: string;
+      tenureMonths?: number;
+      /** Rupees, as a string. Never a float. */
+      principalAmount: string;
+      /** In whatever the shop quotes in. Left out, the shop’s own rate is used. */
+      quotedRate?: string;
+      ltvPercent?: string;
+      disbursalMethodId: string;
+      disbursalReference?: string;
+      vaultPacketNumber?: string;
+      vaultLocationId?: string;
+      packetWitnessName?: string;
+      collateral: Array<{
+        description: string;
+        metalId: string;
+        purityId?: string | null;
+        itemCategoryId?: string | null;
+        quantity?: number;
+        /** Grams, as a string. */
+        grossWeight: string;
+        /** Grams, as a string. */
+        stoneWeight?: string;
+        /** Left out, the chosen purity’s fineness is used. */
+        testedPurityPercent?: string;
+        testMethod?: "xrf" | "touchstone" | "declared";
+        conditionNotes?: string;
+        photoStorageKey?: string;
+      }>;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/girvi/loans", { body });
+    },
+    /**
+     * Loans
+     *
+     * `GET /api/girvi/loans`
+     * Requires `girvi.view`.
+     */
+    getGirviLoans(query?: {
+      status?: "draft" | "sanctioned" | "active" | "overdue" | "redeemed" | "defaulted" | "auctioned" | "cancelled";
+      branchId?: string;
+      customerId?: string;
+      /** Loan number, borrower, mobile or packet. */
+      search?: string;
+      overdueOnly?: boolean;
+      dueBefore?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total: number;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total: number;
+    }>('GET', "/api/girvi/loans", { query });
+    },
+    /**
+     * One loan with everything on it
+     *
+     * The articles held, every interest period that has been charged, and every payment taken.
+     * `GET /api/girvi/loans/:id`
+     * Requires `girvi.view`.
+     */
+    getGirviLoansById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/girvi/loans/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Charge the interest that has fallen due
+     *
+     * Writes every period up to today, one row each, and never touches a period already written. Running it twice changes nothing.
+     * `POST /api/girvi/loans/:id/accrue`
+     * Requires `girvi.update`.
+     */
+    postGirviLoansByIdAccrue(params: { id: string }, body: {
+      upTo?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/girvi/loans/${encodeURIComponent(params.id)}/accrue`, { body });
+    },
+    /**
+     * Charge interest on every running loan
+     *
+     * The month-end run. Safe to repeat: a period already charged is never charged again.
+     * `POST /api/girvi/accrue`
+     * Requires `girvi.update`.
+     */
+    postGirviAccrue(body: {
+      upTo?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/girvi/accrue", { body });
+    },
+    /**
+     * Let a period of interest go
+     *
+     * A goodwill call, kept with its reason. The period stays on the record, marked waived, so the history still adds up.
+     * `POST /api/girvi/accruals/:id/waive`
+     * Requires `girvi.waive`.
+     */
+    postGirviAccrualsByIdWaive(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/girvi/accruals/${encodeURIComponent(params.id)}/waive`, { body });
+    },
+    /**
+     * What it takes to clear this loan today
+     *
+     * Brings the interest up to date and shows what is owed, including any least-interest the shop insists on and whatever it charges for closing early.
+     * `GET /api/girvi/loans/:id/settlement`
+     * Requires `girvi.view`.
+     */
+    getGirviLoansByIdSettlement(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/girvi/loans/${encodeURIComponent(params.id)}/settlement`);
+    },
+    /**
+     * Take a payment
+     *
+     * Applies the money in the order the shop has set — penalty, interest and principal, or whatever order it uses — and gives a receipt. Payment modes come from Masters, so reference rules, per-mode limits and the shop’s cash ceiling apply. With `foreclose` the whole loan is settled today, including any charge for closing early.
+     * `POST /api/girvi/loans/:id/repayments`
+     * Requires `girvi.update`.
+     */
+    postGirviLoansByIdRepayments(params: { id: string }, body: {
+      /** Rupees, as a string. Never a float. */
+      amount: string;
+      paymentMethodId: string;
+      reference?: string;
+      paidOn?: string;
+      foreclose?: boolean;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/girvi/loans/${encodeURIComponent(params.id)}/repayments`, { body });
+    },
+    /**
+     * Take back a payment entered by mistake
+     *
+     * The money is reversed with mirror entries and the loan opens again if that payment had closed it. Nothing posted is ever deleted.
+     * `POST /api/girvi/repayments/:id/cancel`
+     * Requires `girvi.update`.
+     */
+    postGirviRepaymentsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/girvi/repayments/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Give the packet back
+     *
+     * Only once nothing is owed. The articles are marked returned, the packet is opened and a release receipt is raised.
+     * `POST /api/girvi/loans/:id/release`
+     * Requires `girvi.release`.
+     */
+    postGirviLoansByIdRelease(params: { id: string }, body: {
+      releasedToName?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/girvi/loans/${encodeURIComponent(params.id)}/release`, { body });
+    },
+    /**
+     * Record a notice sent to the borrower
+     *
+     * What makes an auction lawful later. The shop sets how long after the due date the first notice goes, how many there are and the gap between them.
+     * `POST /api/girvi/loans/:id/notice`
+     * Requires `girvi.release`.
+     */
+    postGirviLoansByIdNotice(params: { id: string }, body: {
+      note?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/girvi/loans/${encodeURIComponent(params.id)}/notice`, { body });
+    },
+    /**
+     * Sell the collateral
+     *
+     * Allowed only once every notice has gone out and the time the shop allows has passed. What the sale fetches clears the debt in the shop’s order of allocation; anything short is the shop’s loss, and anything left over is the borrower’s money, held for them unless the shop has set otherwise.
+     * `POST /api/girvi/loans/:id/auction`
+     * Requires `girvi.auction`.
+     */
+    postGirviLoansByIdAuction(params: { id: string }, body: {
+      /** Rupees, as a string. Never a float. */
+      proceeds: string;
+      auctionDate?: string;
+      paymentMethodId?: string;
+      notes?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/girvi/loans/${encodeURIComponent(params.id)}/auction`, { body });
+    },
+    /**
+     * Every packet the shop is holding
+     *
+     * The vault register: whose gold, how much of it, which packet and where it is kept — so anything can be found without opening a packet.
+     * `GET /api/girvi/vault`
+     * Requires `girvi.view`.
+     */
+    getGirviVault(query?: {
+      branchId?: string;
+      search?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/girvi/vault", { query });
+    },
+    /**
+     * The lending book
+     *
+     * What is out, what it has earned, what is overdue, and how much gold is being held against it.
+     * `GET /api/girvi/portfolio`
+     * Requires `girvi.view`.
+     */
+    getGirviPortfolio(query?: {
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/girvi/portfolio", { query });
+    },
+    /**
      * Open the private screen
      *
      * Checks the private screen password. Five wrong tries lock the user out for five minutes.
@@ -3696,281 +4601,6 @@ export function createClient(options: ClientOptions) {
      */
     deleteTaggingTemplatesById(params: { id: string }): Promise<void> {
       return request<void>('DELETE', `/api/tagging/templates/${encodeURIComponent(params.id)}`);
-    },
-    /**
-     * List scheme plans
-     *
-     * Paginated. `total` is the count before paging, for the pager.
-     * `GET /api/schemes/plans`
-     * Requires `schemes.plans.view`.
-     */
-    getSchemesPlans(query?: {
-      /** Matches code, name. */
-      search?: string;
-      is_active?: boolean;
-      /** From the previous page's nextCursor (large lists only). */
-      cursor?: string;
-      limit?: number;
-      offset?: number;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }>('GET', "/api/schemes/plans", { query });
-    },
-    /**
-     * Get one scheme plan
-     *
-     * `GET /api/schemes/plans/:id`
-     * Requires `schemes.plans.view`.
-     */
-    getSchemesPlansById(params: { id: string }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('GET', `/api/schemes/plans/${encodeURIComponent(params.id)}`);
-    },
-    /**
-     * Create a scheme plan
-     *
-     * `POST /api/schemes/plans`
-     * Requires `schemes.plans.create`.
-     */
-    postSchemesPlans(body: {
-      code: string;
-      name: string;
-      description?: string;
-      metal_id: string;
-      /** weight accrues grams at each payment’s rate — the customer is owed metal, not money. */
-      accrual_basis?: "rupee" | "weight";
-      tenure_months: number;
-      /** Rupees, as a string. Never a float. */
-      installment_amount?: string;
-      is_flexible_amount?: boolean;
-      /** The classic "pay 11, get 12" is 1. */
-      bonus_installments?: string;
-      bonus_percent?: string;
-      max_missed_installments?: number;
-      making_charge_discount_percent?: string;
-      allow_partial_redemption?: boolean;
-      allow_cash_redemption?: boolean;
-      grace_period_days?: number;
-      terms_and_conditions?: string;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/schemes/plans", { body });
-    },
-    /**
-     * Update a scheme plan
-     *
-     * Only the fields you send are changed.
-     * `PATCH /api/schemes/plans/:id`
-     * Requires `schemes.plans.update`.
-     */
-    patchSchemesPlansById(params: { id: string }, body: {
-      name?: string;
-      is_active?: boolean;
-      bonus_installments?: string;
-      terms_and_conditions?: string;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('PATCH', `/api/schemes/plans/${encodeURIComponent(params.id)}`, { body });
-    },
-    /**
-     * Remove a scheme plan
-     *
-     * Soft delete — the row stays for the audit trail and disappears from lists.
-     * `DELETE /api/schemes/plans/:id`
-     * Requires `schemes.plans.delete`.
-     */
-    deleteSchemesPlansById(params: { id: string }): Promise<void> {
-      return request<void>('DELETE', `/api/schemes/plans/${encodeURIComponent(params.id)}`);
-    },
-    /**
-     * Enroll a customer and generate the installment schedule
-     *
-     * Creates the account and writes every installment row up front, so “what is due this month” is a simple query rather than a calculation.
-     * `POST /api/schemes/accounts`
-     * Requires `schemes.accounts.create`.
-     */
-    postSchemesAccounts(body: {
-      schemePlanId: string;
-      customerId: string;
-      branchId: string;
-      enrolledOn: string;
-      /** Rupees, as a string. Never a float. */
-      installmentAmount: string;
-      dueDay?: number;
-      nomineeName?: string;
-      nomineeRelationship?: string;
-      nomineePhone?: string;
-    }): Promise<{
-      account: Record<string, unknown>;
-      installments: number;
-    }> {
-      return request<{
-      account: Record<string, unknown>;
-      installments: number;
-    }>('POST', "/api/schemes/accounts", { body });
-    },
-    /**
-     * Collect an installment
-     *
-     * Records the payment and, for weight-basis plans, the grams it bought at today’s rate — which is what the customer is actually owed.
-     * `POST /api/schemes/installments/:id/collect`
-     * Requires `schemes.collection.create`.
-     */
-    postSchemesInstallmentsByIdCollect(params: { id: string }, body: {
-      /** Rupees, as a string. Never a float. */
-      amountPaid: string;
-      paidOn: string;
-      paymentMode: "cash" | "card" | "upi" | "bank_transfer" | "cheque" | "auto_debit";
-      paymentReference?: string;
-      /** Rupees, as a string. Never a float. */
-      ratePerGram?: string;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', `/api/schemes/installments/${encodeURIComponent(params.id)}/collect`, { body });
-    },
-    /**
-     * List scheme accounts
-     *
-     * `GET /api/schemes/accounts`
-     * Requires `schemes.accounts.view`.
-     */
-    getSchemesAccounts(query?: {
-      status?: "active" | "matured" | "redeemed" | "defaulted" | "cancelled" | "closed";
-      customerId?: string;
-      branchId?: string;
-      search?: string;
-      limit?: number;
-      offset?: number;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }>('GET', "/api/schemes/accounts", { query });
-    },
-    /**
-     * Installments due or missed
-     *
-     * Drives the "Scheme collections due today" dashboard alert and the reminder run.
-     * `GET /api/schemes/due`
-     * Requires `schemes.collection.view`.
-     */
-    getSchemesDue(query?: {
-      onDate?: string;
-      includeMissed?: boolean;
-      branchId?: string;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      /** Rupees, as a string. Never a float. */
-      totalDue: string;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      /** Rupees, as a string. Never a float. */
-      totalDue: string;
-    }>('GET', "/api/schemes/due", { query });
-    },
-    /**
-     * Sanction a Girvi loan
-     *
-     * Appraises the collateral, caps the principal at the configured LTV (75% by default), and records the vault packet the items are sealed into.
-     * `POST /api/girvi/loans`
-     * Requires `girvi.create`.
-     */
-    postGirviLoans(body: {
-      branchId: string;
-      /** Omit for a walk-in; the borrower fields are then required. */
-      customerId?: string;
-      borrowerName: string;
-      borrowerPhone: string;
-      borrowerAddress?: string;
-      borrowerIdType?: "aadhaar" | "pan" | "voter" | "driving_licence" | "passport";
-      borrowerIdNumber?: string;
-      sanctionedOn: string;
-      dueDate: string;
-      /** Regulatory cap is 75%. */
-      ltvPercent?: string;
-      /** Rupees, as a string. Never a float. */
-      principalAmount: string;
-      interestRateMonthly: string;
-      /** Rupees, as a string. Never a float. */
-      processingFee?: string;
-      disbursalMode?: "cash" | "bank_transfer" | "upi" | "cheque";
-      vaultPacketNumber?: string;
-      vaultLocationId?: string;
-      collateral: Array<{
-        description: string;
-        metalId: string;
-        purityId?: string | null;
-        quantity?: number;
-        /** Grams, as a string. */
-        grossWeight: string;
-        /** Grams, as a string. */
-        stoneWeight?: string;
-        testedPurityPercent: string;
-        testMethod?: "xrf" | "touchstone" | "declared";
-        /** Buying rate used for appraisal. */
-        ratePerGram: string;
-        conditionNotes?: string;
-        photoStorageKey?: string;
-      }>;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', "/api/girvi/loans", { body });
-    },
-    /**
-     * List Girvi loans
-     *
-     * `GET /api/girvi/loans`
-     * Requires `girvi.view`.
-     */
-    getGirviLoans(query?: {
-      status?: "draft" | "sanctioned" | "active" | "overdue" | "redeemed" | "defaulted" | "auctioned" | "cancelled";
-      branchId?: string;
-      /** Matches loan number, borrower or vault packet. */
-      search?: string;
-      limit?: number;
-      offset?: number;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      total?: number;
-      limit?: number;
-      offset?: number;
-    }>('GET', "/api/girvi/loans", { query });
-    },
-    /**
-     * Record a repayment
-     *
-     * Interest is cleared before principal. The balance after the payment is stored so a receipt reprints exactly.
-     * `POST /api/girvi/loans/:id/repayments`
-     * Requires `girvi.update`.
-     */
-    postGirviLoansByIdRepayments(params: { id: string }, body: {
-      /** Rupees, as a string. Never a float. */
-      amount: string;
-      paidOn: string;
-      mode?: "cash" | "card" | "upi" | "bank_transfer" | "cheque";
-      reference?: string;
-      /** Rupees, as a string. Never a float. */
-      penaltyComponent?: string;
-    }): Promise<Record<string, unknown>> {
-      return request<Record<string, unknown>>('POST', `/api/girvi/loans/${encodeURIComponent(params.id)}/repayments`, { body });
     },
     /**
      * The precious metal ledger, in fine grams

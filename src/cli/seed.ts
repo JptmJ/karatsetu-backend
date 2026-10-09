@@ -250,7 +250,7 @@ async function seedTransactions(tenantId: string, branchId: string) {
     // 1. buy 500g of 22K, with the bill
     await createInward(tx, {
       supplierId: supplier, locationId: vault,
-      lines: [{ itemId: bulk, purityId: p22, grossWeight: '500.000', metalBasis: 'rupee', ratePerGram: '6640' }],
+      lines: [{ itemId: bulk, purityId: p22, grossWeight: '500.000', metalBasis: 'rupee' }],
       bill: { supplierInvoiceNumber: 'MBT/2026/4471', supplierInvoiceDate: today() },
     });
 
@@ -277,18 +277,19 @@ async function seedTransactions(tenantId: string, branchId: string) {
     // 3. one order of each type, spread across their pipelines
     const c = async (code: string) => id(`select id from party where code = $1`, [code]);
     const ring = await id(`select id from item where code = 'RING-22K'`);
+    const cashMethodId = await id(`select id from payment_method where code = 'CASH'`);
 
     await createOrder(tx, {
-      orderType: 'booking', customerId: await c('C-004'), branchId,
-      orderDate: today(), expectedDeliveryDate: daysAway(6), rateLockType: 'today',
-      lockedRatePerGram: '6860', advanceAmount: '25000',
+      orderType: 'booking', customerId: await c('C-004'),
+      orderDate: today(), expectedDeliveryDate: daysAway(6), rateLockType: 'booking',
+      lockedRatePerGram: '6860', advance: { paymentMethodId: cashMethodId, amount: '25000' },
       lines: [{ title: '22K Diamond Accent Bangle', lineMode: 'booking', itemId: ring, purityId: p22,
-        grossWeight: '18.500', ratePerGram: '6860', makingRate: '610', wastagePercent: '8' }],
+        grossWeight: '18.500', makingRate: '610', wastagePercent: '8' }],
       notes: 'Customer prefers evening pickup after final polishing check.',
     });
 
     await createOrder(tx, {
-      orderType: 'repair', customerId: await c('C-005'), branchId,
+      orderType: 'repair', customerId: await c('C-005'),
       orderDate: today(), expectedDeliveryDate: daysAway(3),
       repairItemDescription: 'Antique 22K necklace with damaged rear clasp and slight chain deformation.',
       repairIssueDescription: 'Clasp broken, chain slightly bent near the third link.',
@@ -297,20 +298,20 @@ async function seedTransactions(tenantId: string, branchId: string) {
     });
 
     await createOrder(tx, {
-      orderType: 'wedding', customerId: await c('C-006'), branchId,
+      orderType: 'wedding', customerId: await c('C-006'),
       orderDate: today(), expectedDeliveryDate: daysAway(45),
       eventDate: daysAway(52), eventType: 'Wedding',
-      advanceAmount: '250000',
+      advance: { paymentMethodId: cashMethodId, amount: '250000' },
       lines: [
-        { title: 'Bridal Necklace Set', lineMode: 'custom', itemId: ring, purityId: p22, grossWeight: '92.500', ratePerGram: '6860', makingRate: '680', wastagePercent: '9' },
-        { title: 'Matching Family Bangles', lineMode: 'custom', itemId: ring, purityId: p22, grossWeight: '48.000', ratePerGram: '6860', makingRate: '610', wastagePercent: '8' },
-        { title: 'Groom Chain', lineMode: 'booking', itemId: ring, purityId: p22, grossWeight: '26.400', ratePerGram: '6860', makingRate: '450', wastagePercent: '7' },
+        { title: 'Bridal Necklace Set', lineMode: 'custom', itemId: ring, purityId: p22, grossWeight: '92.500', makingRate: '680', wastagePercent: '9' },
+        { title: 'Matching Family Bangles', lineMode: 'custom', itemId: ring, purityId: p22, grossWeight: '48.000', makingRate: '610', wastagePercent: '8' },
+        { title: 'Groom Chain', lineMode: 'booking', itemId: ring, purityId: p22, grossWeight: '26.400', makingRate: '450', wastagePercent: '7' },
       ],
       notes: 'Bridal set requires first priority and separate presentation packaging.',
     });
 
     await createOrder(tx, {
-      orderType: 'custom', customerId: await c('C-007'), branchId,
+      orderType: 'custom', customerId: await c('C-007'),
       orderDate: today(), expectedDeliveryDate: daysAway(21),
       requirementDescription: 'Gents gold chain, 22K, byzantine link, approximately 40g.',
       sizeSpecifications: '22 inch, 6mm width', budgetMin: '250000', budgetMax: '320000',
@@ -318,13 +319,13 @@ async function seedTransactions(tenantId: string, branchId: string) {
     });
 
     await createOrder(tx, {
-      orderType: 'corporate', customerId: await c('C-003'), branchId,
+      orderType: 'corporate', customerId: await c('C-003'),
       orderDate: today(), expectedDeliveryDate: daysAway(30),
       companyName: 'Aurum Hospitality Pvt Ltd', companyGstin: '27AAGCA7788Q1Z9',
       poReference: 'AHPL/PO/2026/0412', creditTerms: 'net_30',
       brandingNotes: 'Each box needs the client monogram on the outer sleeve only.',
       lines: [{ title: 'Executive Gold Coin Gift Box', lineMode: 'custom', itemId: ring, purityId: p22,
-        quantity: '25', grossWeight: '10.000', ratePerGram: '6860', makingRate: '150' }],
+        quantity: '25', grossWeight: '10.000', makingRate: '150' }],
     });
 
     // 4. bill one ring, part cash and part UPI; the rest stays on the customer

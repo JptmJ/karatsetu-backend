@@ -135,7 +135,7 @@ export const MODULE_CATALOG: ModuleSpec[] = [
       sub('schemes.accounts', 'Enrollment', 'retailer', 'live'),
       sub('schemes.collection', 'Installment Collection', 'retailer', 'live'),
       sub('schemes.maturity', 'Maturity & Redemption', 'retailer', 'live'),
-      sub('schemes.liability', 'Liability Dashboard', 'retailer'),
+      sub('schemes.liability', 'Liability Dashboard', 'retailer', 'live'),
     ],
   },
   {

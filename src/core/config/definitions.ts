@@ -328,6 +328,395 @@ export const CONFIG = {
     default: false,
     scope: 'branch',
   }),
+  /* ---------------------------------------------------------------- orders */
+  orderRateLock: defineConfig({
+    key: 'orders.rate_lock.default', group: 'orders', label: 'Rate an order is priced at',
+    description: 'booking = the rate on the day the order is taken, held until delivery; delivery = the rate on the day it is billed; fixed = a rate agreed and typed in. Staff can choose another on the order itself.',
+    schema: z.enum(['booking', 'delivery', 'fixed']), default: 'booking' as const, scope: 'tenant', sensitive: true,
+  }),
+  orderRateLockDays: defineConfig({
+    key: 'orders.rate_lock.days', group: 'orders', label: 'Days a booking rate is held',
+    description: '0 = held until the order is delivered, however long that takes.',
+    schema: z.coerce.number().int().min(0).max(3650), default: 0, scope: 'tenant',
+  }),
+  orderRateLockOnExpiry: defineConfig({
+    key: 'orders.rate_lock.on_expiry', group: 'orders', label: 'When the held rate has run out',
+    description: 'delivery_rate = bill at the rate on the delivery day; keep = honour the held rate anyway and say so on screen.',
+    schema: z.enum(['delivery_rate', 'keep']), default: 'delivery_rate' as const, scope: 'tenant',
+  }),
+  orderRateLockAllowChange: defineConfig({
+    key: 'orders.rate_lock.allow_change', group: 'orders', label: 'Staff may switch the rate at delivery',
+    description: 'On = whoever bills the order can take today’s rate instead of the held one, or the other way round (needs orders.rate.override).',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  orderAdvanceMinPercent: defineConfig({
+    key: 'orders.advance.min_percent', group: 'orders', label: 'Smallest advance to take an order (%)',
+    description: '0 = an order can be booked without any advance.',
+    schema: z.coerce.number().min(0).max(100), default: 0, scope: 'tenant',
+  }),
+  orderDeliveryNeedsFullPayment: defineConfig({
+    key: 'orders.delivery.require_full_payment', group: 'orders', label: 'Orders are paid in full before delivery',
+    description: 'Off = the rest can stay on the customer’s account, as at the counter.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  orderRepairInvoiceType: defineConfig({
+    key: 'orders.repair.invoice_type', group: 'orders', label: 'A repair is billed as',
+    description: 'service = labour only, on a SAC code at the service rate, nothing moves through stock; goods = a normal jewellery bill.',
+    schema: z.enum(['service', 'goods']), default: 'service' as const, scope: 'tenant',
+  }),
+  orderRepairSac: defineConfig({
+    key: 'orders.repair.service_sac', group: 'orders', label: 'SAC code for repair work',
+    description: 'Printed on a service invoice. Check it against your own filings.',
+    schema: z.string().trim().max(10), default: '998892', scope: 'tenant',
+  }),
+  orderRepairGstPercent: defineConfig({
+    key: 'orders.repair.service_gst_percent', group: 'orders', label: 'GST on repair labour (%)',
+    description: 'Used when a repair is billed as a service.',
+    schema: z.coerce.number().min(0).max(50), default: 18, scope: 'tenant',
+  }),
+  orderKarigarExcessGhat: defineConfig({
+    key: 'orders.karigar.excess_ghat', group: 'orders', label: 'Metal lost above the agreed ghat',
+    description: 'recover = charged to the karigar against their wages; absorb = booked to Metal Gain / Loss as the shop’s loss.',
+    schema: z.enum(['recover', 'absorb']), default: 'recover' as const, scope: 'tenant',
+  }),
+  orderSlaWarnDays: defineConfig({
+    key: 'orders.sla.warn_days', group: 'orders', label: 'Warn this many days before delivery',
+    description: 'Orders due within this many days are flagged on the board.',
+    schema: z.coerce.number().int().min(0).max(90), default: 2, scope: 'tenant',
+  }),
+  /* --- schemes (Swarna Nidhi → Settings) --- */
+  schemeBonusAccrual: defineConfig({
+    key: 'schemes.bonus.accrual', group: 'schemes', label: 'When the bonus is added',
+    description: 'maturity = the whole bonus lands when the account matures; monthly = it builds up with every installment, so the customer watches it grow in the passbook.',
+    schema: z.enum(['maturity', 'monthly']), default: 'maturity' as const, scope: 'tenant', sensitive: true,
+  }),
+  schemeBonusTreatment: defineConfig({
+    key: 'schemes.bonus.treatment', group: 'schemes', label: 'The bonus is booked as',
+    description: 'expense = the shop pays for it (Scheme Bonus, 5300); discount = it comes off the redemption bill instead, so the customer simply buys for less.',
+    schema: z.enum(['expense', 'discount']), default: 'expense' as const, scope: 'tenant',
+  }),
+  schemeBonusForfeit: defineConfig({
+    key: 'schemes.bonus.forfeit_on_missed', group: 'schemes', label: 'Lose the bonus after too many missed months',
+    description: 'Off = the bonus is paid however many months were missed. How many are allowed is set on each plan.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  schemeRateSource: defineConfig({
+    key: 'schemes.rate_source', group: 'schemes', label: 'Rate used to turn money into grams',
+    description: 'selling = what the shop sells gold at; buying = what it buys at. A weight plan reads this every time an installment is paid.',
+    schema: z.enum(['selling', 'buying']), default: 'selling' as const, scope: 'tenant',
+  }),
+  schemeLateRateBasis: defineConfig({
+    key: 'schemes.late.rate_basis', group: 'schemes', label: 'A late installment buys grams at',
+    description: 'today = the rate on the day it is actually paid; due_date = the rate of the month it was due, which is kinder to the customer and costs the shop if gold has risen since.',
+    schema: z.enum(['today', 'due_date']), default: 'today' as const, scope: 'tenant',
+  }),
+  schemeAllowAdvance: defineConfig({
+    key: 'schemes.allow_advance', group: 'schemes', label: 'Allow paying months in advance',
+    description: 'A customer can clear several installments at once. Off = one month at a time, in order.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  schemeAutoMature: defineConfig({
+    key: 'schemes.auto_mature', group: 'schemes', label: 'Mature an account by itself once it is fully paid',
+    description: 'Off = someone has to mature it by hand before it can be redeemed.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  schemeRedeemOnOrder: defineConfig({
+    key: 'schemes.redemption.allow_order', group: 'schemes', label: 'A scheme can pay for an order',
+    description: 'On = the balance can be put against a custom order, not only a counter bill.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  schemeRedeemPartial: defineConfig({
+    key: 'schemes.redemption.allow_partial', group: 'schemes', label: 'Allow spending a scheme in parts',
+    description: 'On = whatever is left stays on the account for next time. A plan can still refuse it.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  schemeRedeemWindow: defineConfig({
+    key: 'schemes.redemption.window_days', group: 'schemes', label: 'Days after maturity to redeem',
+    description: '0 = no limit. Past it the account is flagged on the screen; nothing is ever taken away.',
+    schema: z.coerce.number().int().min(0).max(3650), default: 0, scope: 'tenant',
+  }),
+  schemeClosureAllowed: defineConfig({
+    key: 'schemes.closure.allowed', group: 'schemes', label: 'Allow closing an account early',
+    description: 'Off = a customer who stops paying leaves the money on the account until it matures.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  schemeClosureSettlement: defineConfig({
+    key: 'schemes.closure.settlement', group: 'schemes', label: 'An account closed early pays out as',
+    description: 'refund = money back through a payment mode; credit = it becomes credit to spend in the shop; ask = whoever closes it chooses at the time.',
+    schema: z.enum(['refund', 'credit', 'ask']), default: 'ask' as const, scope: 'tenant',
+  }),
+  schemeClosureDeduction: defineConfig({
+    key: 'schemes.closure.deduction_percent', group: 'schemes', label: 'Kept back on an early closure (%)',
+    description: 'Taken off what is handed back. 0 = the customer gets back everything they paid. A bonus is never paid on an early closure.',
+    schema: z.coerce.number().min(0).max(100), default: 0, scope: 'tenant',
+  }),
+  schemeClosureMinMonths: defineConfig({
+    key: 'schemes.closure.min_months', group: 'schemes', label: 'Months that must be paid before closing early',
+    description: '0 = an account can be closed whenever the customer asks.',
+    schema: z.coerce.number().int().min(0).max(120), default: 0, scope: 'tenant',
+  }),
+  schemeMissedAfterDays: defineConfig({
+    key: 'schemes.missed_after_days', group: 'schemes', label: 'Count a month missed this long after it was due',
+    description: 'Counted from the due date, on top of the plan’s grace days. It decides what the due list shows and when the bonus is at risk.',
+    schema: z.coerce.number().int().min(0).max(365), default: 30, scope: 'tenant',
+  }),
+  schemeReceiptPrint: defineConfig({
+    key: 'schemes.receipt.print_on_collect', group: 'schemes', label: 'Open the receipt after collecting',
+    description: 'Off = the receipt is still saved, and can be printed from the passbook whenever it is wanted.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  /* --- girvi (Girvi → Settings) --- */
+  girviRateBasis: defineConfig({
+    key: 'girvi.interest.rate_basis', group: 'girvi', label: 'Interest is quoted as',
+    description: 'per_month = a % each month; per_year = a % a year; per_hundred = the old way, so many rupees per ₹100 a month. Whichever you pick, that is what staff type on the loan.',
+    schema: z.enum(['per_month', 'per_year', 'per_hundred']), default: 'per_month' as const, scope: 'tenant', sensitive: true,
+  }),
+  girviDefaultRate: defineConfig({
+    key: 'girvi.interest.default_rate', group: 'girvi', label: 'Rate on a new loan',
+    description: 'In whatever you quote in above. Staff can change it on the loan if you let them.',
+    schema: z.coerce.number().min(0).max(100), default: 2, scope: 'tenant',
+  }),
+  girviRateEditable: defineConfig({
+    key: 'girvi.interest.rate_editable', group: 'girvi', label: 'Staff can change the rate on a loan',
+    description: 'Off = every loan takes the rate above.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  girviInterestMethod: defineConfig({
+    key: 'girvi.interest.method', group: 'girvi', label: 'Interest is',
+    description: 'simple = always on the principal; compound = unpaid interest joins the principal and earns interest itself.',
+    schema: z.enum(['simple', 'compound']), default: 'simple' as const, scope: 'tenant',
+  }),
+  girviCompoundEvery: defineConfig({
+    key: 'girvi.interest.compound_months', group: 'girvi', label: 'Interest joins the principal every',
+    description: 'Months. Only used when interest is compound.',
+    schema: z.coerce.number().int().min(1).max(24), default: 12, scope: 'tenant',
+  }),
+  girviPeriodBasis: defineConfig({
+    key: 'girvi.interest.period_basis', group: 'girvi', label: 'A month of interest means',
+    description: 'calendar = the same date next month; thirty_days = every 30 days; actual_days = worked out day by day.',
+    schema: z.enum(['calendar', 'thirty_days', 'actual_days']), default: 'calendar' as const, scope: 'tenant',
+  }),
+  girviMinimumMonths: defineConfig({
+    key: 'girvi.interest.minimum_months', group: 'girvi', label: 'Least interest charged, in months',
+    description: 'Most shops charge a full month even if the loan is redeemed the next day. 0 = charge only for the days it ran.',
+    schema: z.coerce.number().min(0).max(12), default: 1, scope: 'tenant',
+  }),
+  girviPartMonth: defineConfig({
+    key: 'girvi.interest.part_month', group: 'girvi', label: 'Part of a month is charged',
+    description: 'full = rounded up to a whole month; pro_rata = only the days that ran.',
+    schema: z.enum(['full', 'pro_rata']), default: 'full' as const, scope: 'tenant',
+  }),
+  girviGraceDays: defineConfig({
+    key: 'girvi.interest.grace_days', group: 'girvi', label: 'Days before interest starts',
+    description: '0 = from the day the loan is given.',
+    schema: z.coerce.number().int().min(0).max(90), default: 0, scope: 'tenant',
+  }),
+  girviPenalRate: defineConfig({
+    key: 'girvi.interest.penal_rate', group: 'girvi', label: 'Extra rate once the loan is overdue',
+    description: 'Added to the normal rate after the due date, in the same units. 0 = no extra.',
+    schema: z.coerce.number().min(0).max(100), default: 0, scope: 'tenant',
+  }),
+  girviAccrualBooking: defineConfig({
+    key: 'girvi.interest.book_when', group: 'girvi', label: 'Interest reaches the books',
+    description: 'accrued = each month as it is earned, which is the proper way; received = only when the customer pays, which is simpler for a small shop.',
+    schema: z.enum(['accrued', 'received']), default: 'accrued' as const, scope: 'tenant', sensitive: true,
+  }),
+  girviRateSource: defineConfig({
+    key: 'girvi.valuation.rate_source', group: 'girvi', label: 'Gold is valued at',
+    description: 'buying = what you buy old gold at; selling = your selling rate. Most shops lend on the buying rate.',
+    schema: z.enum(['buying', 'selling']), default: 'buying' as const, scope: 'tenant',
+  }),
+  girviRateMargin: defineConfig({
+    key: 'girvi.valuation.margin_percent', group: 'girvi', label: 'Take this % off the rate',
+    description: 'For shops that value collateral a set % below the chosen rate. 0 = the rate as it is.',
+    schema: z.coerce.number().min(0).max(50), default: 0, scope: 'tenant',
+  }),
+  girviValuationBasis: defineConfig({
+    key: 'girvi.valuation.basis', group: 'girvi', label: 'Collateral is valued on',
+    description: 'fine = fine weight × the pure rate; purity = net weight × the rate of the tested purity.',
+    schema: z.enum(['fine', 'purity']), default: 'fine' as const, scope: 'tenant',
+  }),
+  girviLtvPercent: defineConfig({
+    key: 'girvi.ltv.percent', group: 'girvi', label: 'Lend up to this % of the value',
+    description: 'The loan-to-value. Keep an eye on what the law allows you.',
+    schema: z.coerce.number().min(1).max(95), default: 75, scope: 'tenant', sensitive: true,
+  }),
+  girviLtvMax: defineConfig({
+    key: 'girvi.ltv.hard_cap', group: 'girvi', label: 'Never lend above this %',
+    description: 'A ceiling nobody may exceed, whatever they type on the loan.',
+    schema: z.coerce.number().min(1).max(95), default: 75, scope: 'tenant',
+  }),
+  girviLtvSilver: defineConfig({
+    key: 'girvi.ltv.silver_percent', group: 'girvi', label: 'Lend up to this % on silver',
+    description: 'Silver moves differently from gold, so it usually carries a lower limit. 0 = use the same as gold.',
+    schema: z.coerce.number().min(0).max(95), default: 60, scope: 'tenant',
+  }),
+  girviMinLoan: defineConfig({
+    key: 'girvi.loan.minimum_amount', group: 'girvi', label: 'Smallest loan (₹)',
+    description: '0 = no minimum.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviMaxLoan: defineConfig({
+    key: 'girvi.loan.maximum_amount', group: 'girvi', label: 'Largest loan (₹)',
+    description: '0 = no maximum.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviRounding: defineConfig({
+    key: 'girvi.loan.rounding', group: 'girvi', label: 'Round the loan amount to',
+    description: 'The nearest ₹. 1 = no rounding.',
+    schema: z.coerce.number().int().min(1).max(10000), default: 100, scope: 'tenant',
+  }),
+  girviAllowTopUp: defineConfig({
+    key: 'girvi.loan.allow_top_up', group: 'girvi', label: 'Allow lending more on the same packet',
+    description: 'On = a borrower can take more against collateral already held, up to the limit.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  girviTenureMonths: defineConfig({
+    key: 'girvi.tenure.months', group: 'girvi', label: 'A loan runs for',
+    description: 'Months, used to work out the due date. 0 = open-ended, with no due date.',
+    schema: z.coerce.number().int().min(0).max(120), default: 12, scope: 'tenant',
+  }),
+  girviOverdueGrace: defineConfig({
+    key: 'girvi.tenure.grace_days', group: 'girvi', label: 'Days past the due date before it counts as overdue',
+    description: '',
+    schema: z.coerce.number().int().min(0).max(365), default: 15, scope: 'tenant',
+  }),
+  girviFeeBasis: defineConfig({
+    key: 'girvi.charges.processing_basis', group: 'girvi', label: 'Processing fee is',
+    description: 'flat = a fixed amount; percent = a % of the loan.',
+    schema: z.enum(['flat', 'percent']), default: 'flat' as const, scope: 'tenant',
+  }),
+  girviFeeValue: defineConfig({
+    key: 'girvi.charges.processing_value', group: 'girvi', label: 'Processing fee',
+    description: 'In rupees, or as a %, whichever you chose above. 0 = no fee.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviFeeTaken: defineConfig({
+    key: 'girvi.charges.processing_taken', group: 'girvi', label: 'The fee is',
+    description: 'deducted = taken out of what is handed over; added = added to what has to be repaid; separate = collected as cash there and then.',
+    schema: z.enum(['deducted', 'added', 'separate']), default: 'deducted' as const, scope: 'tenant',
+  }),
+  girviAppraisalFee: defineConfig({
+    key: 'girvi.charges.appraisal_fee', group: 'girvi', label: 'Appraisal or documentation charge (₹)',
+    description: 'Taken the same way as the processing fee. 0 = none.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviPenaltyBasis: defineConfig({
+    key: 'girvi.charges.penalty_basis', group: 'girvi', label: 'A late payment penalty is',
+    description: 'none = no penalty; flat = a fixed amount; percent = a % of what is overdue; per_day = an amount for each day late.',
+    schema: z.enum(['none', 'flat', 'percent', 'per_day']), default: 'none' as const, scope: 'tenant',
+  }),
+  girviPenaltyValue: defineConfig({
+    key: 'girvi.charges.penalty_value', group: 'girvi', label: 'Late payment penalty',
+    description: 'In rupees, a %, or rupees a day — whichever you chose above.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviStorageFee: defineConfig({
+    key: 'girvi.charges.storage_per_month', group: 'girvi', label: 'Storage charge a month (₹)',
+    description: 'For shops that charge for keeping the packet. 0 = none.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviAllocation: defineConfig({
+    key: 'girvi.repayment.allocation', group: 'girvi', label: 'A payment clears',
+    description: 'The order money is applied in. penalty_interest_principal is the usual one.',
+    schema: z.enum(['penalty_interest_principal', 'interest_penalty_principal', 'principal_first']), default: 'penalty_interest_principal' as const, scope: 'tenant', sensitive: true,
+  }),
+  girviAllowInterestOnly: defineConfig({
+    key: 'girvi.repayment.allow_interest_only', group: 'girvi', label: 'Allow interest-only payments',
+    description: 'On = a borrower can keep the loan running by paying just the interest.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  girviAllowPartPrincipal: defineConfig({
+    key: 'girvi.repayment.allow_part_principal', group: 'girvi', label: 'Allow paying off part of the principal',
+    description: 'Off = the principal has to be cleared in one go at the end.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  girviMinRepayment: defineConfig({
+    key: 'girvi.repayment.minimum_amount', group: 'girvi', label: 'Smallest payment accepted (₹)',
+    description: '0 = any amount.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviForeclosure: defineConfig({
+    key: 'girvi.repayment.allow_foreclosure', group: 'girvi', label: 'Allow closing a loan early',
+    description: 'On = a borrower may settle before the due date.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  girviForeclosureFee: defineConfig({
+    key: 'girvi.repayment.foreclosure_percent', group: 'girvi', label: 'Charge for closing early (%)',
+    description: 'Of what is still owed. 0 = no charge.',
+    schema: z.coerce.number().min(0).max(20), default: 0, scope: 'tenant',
+  }),
+  girviPacketRequired: defineConfig({
+    key: 'girvi.custody.packet_required', group: 'girvi', label: 'Every loan needs a vault packet number',
+    description: 'Off = the packet number is optional. On = one is given automatically if none is typed.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  girviWitness: defineConfig({
+    key: 'girvi.custody.witness_required', group: 'girvi', label: 'A second person must witness the sealing',
+    description: 'On = whoever seals the packet records who watched.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  girviKycRequired: defineConfig({
+    key: 'girvi.kyc.required', group: 'girvi', label: 'Take proof of identity',
+    description: 'Off = a name and mobile are enough.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  girviKycMinValue: defineConfig({
+    key: 'girvi.kyc.min_value', group: 'girvi', label: 'Identity needed from this loan amount (₹)',
+    description: '0 = on every loan.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  girviBorrowerPhoto: defineConfig({
+    key: 'girvi.kyc.borrower_photo', group: 'girvi', label: 'Take the borrower’s photograph',
+    description: '',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  girviArticlePhoto: defineConfig({
+    key: 'girvi.custody.article_photo', group: 'girvi', label: 'Photograph every article',
+    description: 'So nobody argues later about what was handed in or what condition it was in.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  girviNoticeAfterDays: defineConfig({
+    key: 'girvi.default.notice_after_days', group: 'girvi', label: 'Days overdue before the first notice',
+    description: '',
+    schema: z.coerce.number().int().min(0).max(730), default: 30, scope: 'tenant',
+  }),
+  girviNoticeCount: defineConfig({
+    key: 'girvi.default.notice_count', group: 'girvi', label: 'Notices before an auction',
+    description: '',
+    schema: z.coerce.number().int().min(1).max(5), default: 3, scope: 'tenant',
+  }),
+  girviNoticeGapDays: defineConfig({
+    key: 'girvi.default.notice_gap_days', group: 'girvi', label: 'Days between notices',
+    description: '',
+    schema: z.coerce.number().int().min(1).max(180), default: 30, scope: 'tenant',
+  }),
+  girviAuctionAfterDays: defineConfig({
+    key: 'girvi.default.auction_after_days', group: 'girvi', label: 'Days after the last notice before an auction',
+    description: 'Check what the law requires of you before shortening this.',
+    schema: z.coerce.number().int().min(0).max(730), default: 30, scope: 'tenant', sensitive: true,
+  }),
+  girviSurplus: defineConfig({
+    key: 'girvi.default.surplus', group: 'girvi', label: 'Anything left after an auction',
+    description: 'return = given back to the borrower, which is what the law generally expects; keep = kept by the shop.',
+    schema: z.enum(['return', 'keep']), default: 'return' as const, scope: 'tenant', sensitive: true,
+  }),
+  girviCashDisbursalLimit: defineConfig({
+    key: 'girvi.cash.disbursal_limit', group: 'girvi', label: 'Most cash handed to one borrower in a day (₹)',
+    description: 'Set this to whatever your accountant advises. 0 = no limit checked here.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant', sensitive: true,
+  }),
+  girviCashRepaymentLimit: defineConfig({
+    key: 'girvi.cash.repayment_limit', group: 'girvi', label: 'Most cash taken back from one borrower in a day (₹)',
+    description: 'Set this to whatever your accountant advises. 0 = no limit checked here.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant', sensitive: true,
+  }),
+  girviPrintOnSanction: defineConfig({
+    key: 'girvi.print.ticket_on_sanction', group: 'girvi', label: 'Open the pawn ticket when a loan is given',
+    description: 'Off = it is still saved and can be printed from the loan whenever it is wanted.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+
   stockValuation: defineConfig({
     key: 'inventory.valuation_method',
     group: 'inventory',

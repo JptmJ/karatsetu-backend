@@ -13,6 +13,8 @@ import './routes.orders.js';
 import './routes.pos.js';
 import './routes.purchase.js';
 import './routes.oldgold.js';
+import './routes.schemes.js';
+import './routes.girvi.js';
 import './routes.private.js';
 import './routes.stock.js';
 import './routes.commercial.js';
