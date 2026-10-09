@@ -38,6 +38,12 @@ export interface ModuleSpec {
   statusLabel: string;
   appliesTo: TenantKind;
   defaultLicence: LicenceState;
+  /**
+   * Cannot be switched off for a tenant. Every other module leans on these —
+   * rates, items and customers live in `master`, and a shop without `settings`
+   * could not see its own staff list or numbering.
+   */
+  required?: boolean;
   subModules: SubModuleSpec[];
 }
 
@@ -170,7 +176,7 @@ export const MODULE_CATALOG: ModuleSpec[] = [
     name: 'Master Data & Rate Hub', shortName: 'Rate Hub',
     description: 'Live daily rate broadcasting, purity definitions, Karigars & PAN KYC compliance.',
     statusLabel: 'Live Rate Broadcast',
-    appliesTo: 'both', defaultLicence: 'included',
+    appliesTo: 'both', defaultLicence: 'included', required: true,
     subModules: [
       sub('master.rates', 'Live Metal Rates', 'both', 'live'),
       sub('master.purity', 'Purity & Metal', 'both', 'live'),
@@ -198,7 +204,7 @@ export const MODULE_CATALOG: ModuleSpec[] = [
     name: 'Settings & Theme Studio', shortName: 'Theme Studio',
     description: 'CSS theme variables, luxury presets, approval workflows & branch parameters.',
     statusLabel: 'Theme & Tax Config',
-    appliesTo: 'both', defaultLicence: 'included',
+    appliesTo: 'both', defaultLicence: 'included', required: true,
     subModules: [
       sub('settings.config', 'Config Engine', 'both', 'live'),
       sub('settings.theme', 'Theme Studio', 'both', 'live'),
@@ -212,7 +218,7 @@ export const MODULE_CATALOG: ModuleSpec[] = [
     name: 'Platform Operator & SaaS Admin', shortName: 'SaaS Admin',
     description: 'Multi-tenant subscription manager, module provisioning, feature flags & support mode.',
     statusLabel: 'Tenant & License Manager',
-    appliesTo: 'both', defaultLicence: 'included',
+    appliesTo: 'both', defaultLicence: 'included', required: true,
     subModules: [
       sub('platform.tenants', 'Tenant Directory', 'both', 'live'),
       sub('platform.entitlement', 'Module Entitlement', 'both', 'live'),
@@ -269,6 +275,72 @@ export function catalogFor(
       trialEndsAt: state?.trialEndsAt ?? null,
       expiresAt: state?.expiresAt ?? null,
       subModules: module.subModules.filter((s) => matches(s.appliesTo) && !disabled.has(s.key)),
+      /** Switched off by the super admin. The app hides what these gate; the API refuses it. */
+      disabledSubModules: module.subModules.filter((s) => disabled.has(s.key)).map((s) => s.key),
     };
   });
+}
+
+const BY_KEY = new Map(MODULE_CATALOG.map((m) => [m.key, m]));
+
+export const moduleSpec = (key: string): ModuleSpec | undefined => BY_KEY.get(key);
+
+/** Every permission prefix a route is gated on, filled in as routes are built. */
+const gatedSubModules = new Set<string>();
+
+/**
+ * A module's sub-modules for the console, each saying whether switching it off
+ * is refused by the API (`enforced`) or only hides it from the menu.
+ */
+export const subModulesOf = (key: string) =>
+  (BY_KEY.get(key)?.subModules ?? []).map((s) => ({
+    key: s.key, name: s.name, appliesTo: s.appliesTo, status: s.status,
+    enforced: gatedSubModules.has(s.key),
+  }));
+
+/** The module and, where one matches, the sub-module that an endpoint belongs to. */
+export interface ModuleGate { module: string; subModule: string | null }
+
+/**
+ * Which module an endpoint belongs to, worked out once when routes are built.
+ *
+ * The route's own `module` wins when it is a catalog key — the dashboard reads
+ * with `reports.owner.view`, but switching off Owner BI must not take the
+ * dashboard with it. Otherwise the permission prefix decides, which is how
+ * `/api/purchase/*` (module "purchase", permission `pos.purchase.*`) lands
+ * under POS. A sub-module is matched only when the permission names one, e.g.
+ * `pos.purchase.post` → `pos.purchase`; `orders.create` names none, so the
+ * order sub-modules have no switch of their own yet — they follow the module.
+ *
+ * Required modules return null: they are never off, so there is nothing to check.
+ */
+export function moduleGateFor(routeModule: string, permission: string | undefined): ModuleGate | null {
+  const prefix = permission?.split('.')[0];
+  const spec = BY_KEY.get(routeModule) ?? (prefix ? BY_KEY.get(prefix) : undefined);
+  if (!spec || spec.required) return null;
+
+  const candidate = permission?.split('.').slice(0, 2).join('.');
+  const subModule = candidate && spec.subModules.some((s) => s.key === candidate) ? candidate : null;
+  if (subModule) gatedSubModules.add(subModule);
+  return { module: spec.key, subModule };
+}
+
+/**
+ * Why a tenant may not use this endpoint, or null when it may. Only what the
+ * super admin switched off is refused; a module with no row is on, matching
+ * `catalogFor`.
+ */
+export function gateRefusal(
+  gate: ModuleGate,
+  states: Map<string, TenantModuleState>,
+): { module: string; subModule: string | null; name: string } | null {
+  const state = states.get(gate.module);
+  if (!state) return null;
+  const spec = BY_KEY.get(gate.module)!;
+  if (!state.enabled) return { module: gate.module, subModule: null, name: spec.name };
+  if (gate.subModule && state.disabled.includes(gate.subModule)) {
+    const sub = spec.subModules.find((s) => s.key === gate.subModule)!;
+    return { module: gate.module, subModule: gate.subModule, name: `${spec.shortName} → ${sub.name}` };
+  }
+  return null;
 }

@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { defineRoute, queryOf } from '../core/http/route-registry.js';
 import { transaction, asPlatform, asTenant } from '../core/db/client.js';
 import { param, platformUserId } from '../core/http/middleware.js';
-import { NotFoundError } from '../core/errors/app-error.js';
+import { BusinessRuleError, NotFoundError, ValidationError } from '../core/errors/app-error.js';
 import { audit, platformLogin, platformLogout, platformRefresh } from '../modules/platform/platform-auth.service.js';
 import {
   changeUserRole, createBranch, createTenant,
@@ -27,7 +27,8 @@ import {
 import {
   endSupportSession, listSupportSessions, MAX_DURATION_MINUTES, startSupportSession,
 } from '../modules/platform/support-session.service.js';
-import { MODULE_CATALOG } from '../modules/tenancy/module-catalog.js';
+import { MODULE_CATALOG, moduleSpec, subModulesOf } from '../modules/tenancy/module-catalog.js';
+import { invalidateTenantModules } from '../modules/tenancy/module-access.service.js';
 import { errorEnvelope, gstin, idParam, listOf, pagination, pan, phone, record, uuid } from './schemas.js';
 
 const TODAY = '2026-09-18';
@@ -35,6 +36,8 @@ const TODAY = '2026-09-18';
 const ROLES_DAY = '2026-10-03';
 /** The day roles became owner / branch admin / named staff roles. */
 const TYPES_DAY = '2026-10-04';
+/** The day switching a module off became enforced by the API. */
+const MODULES_DAY = '2026-10-08';
 const M = 'platform';
 const seed = [{ date: TODAY, kind: 'added' as const, note: 'Super admin RBAC: tenants, branches, users.' }];
 
@@ -133,11 +136,16 @@ defineRoute({
   summary: 'The module catalog, for provisioning',
   permission: 'platform.tenants.view',
   responses: [{ status: 200, description: 'All modules with their default licence.', schema: z.object({ modules: z.array(record) }) }],
-  changelog: seed,
+  changelog: [
+    ...seed,
+    { date: MODULES_DAY, kind: 'added', note: '`required` (cannot be switched off) and `subModules`, each with `enforced` — true when switching it off is refused by the API and hidden in the shop app; false when nothing checks it yet.' },
+  ],
   handler: async () => ({
     modules: MODULE_CATALOG.map((m) => ({
       key: m.key, name: m.name, shortName: m.shortName, group: m.group,
       description: m.description, appliesTo: m.appliesTo, defaultLicence: m.defaultLicence,
+      required: m.required === true,
+      subModules: subModulesOf(m.key),
     })),
   }),
 });
@@ -212,6 +220,7 @@ defineRoute({
     modules: z.array(z.object({
       key: z.string(), licence: z.enum(['included', 'purchased', 'trial']),
       trialDays: z.number().int().min(1).max(365).optional(),
+      enabled: z.boolean().optional().describe('false creates the tenant with this module switched off. Not allowed for required modules.'),
     })).optional().describe('Omit to use each module’s default licence.'),
   }),
   responses: [
@@ -574,40 +583,85 @@ defineRoute({
   method: 'put', path: '/api/platform/tenants/:id/modules/:moduleKey', module: M,
   summary: 'Change a tenant\u2019s module entitlement',
   description:
-    'Grant, revoke, or move a module between included / purchased / trial. A module whose trial or term has lapsed still appears in the tenant\u2019s dock, but locked \u2014 so they can see what they are missing rather than having it silently vanish.',
+    'Grant, revoke, or move a module between included / purchased / trial. A module whose trial or term has lapsed still appears in the tenant\u2019s dock, but locked \u2014 so they can see what they are missing rather than having it silently vanish.\n\n' +
+    '`enabled: false` switches the module off: it leaves the tenant\u2019s dock and every endpoint belonging to it answers 403 `module_disabled`, for staff and support sessions alike. `disabledSubmodules` does the same for single sub-modules that have permissions of their own (e.g. `pos.purchase`) \u2014 see `enforced` on `GET /api/platform/modules`. Other sub-module keys are accepted but nothing checks them yet. Data is never touched, so switching back on restores everything as it was.\n\n' +
+    'Master Data, Settings and SaaS Admin are `required` in the catalog and cannot be switched off.',
   permission: 'platform.entitlement.update',
   params: z.object({ id: uuid, moduleKey: z.string().min(1) }),
   body: z.object({
-    enabled: z.boolean().optional(),
+    enabled: z.boolean().optional().describe('false switches the whole module off for this tenant.'),
     licence: z.enum(['included', 'purchased', 'trial', 'expired']).optional(),
-    trialEndsAt: z.string().datetime().nullish(),
-    expiresAt: z.string().datetime().nullish(),
-    disabledSubmodules: z.array(z.string()).optional().describe('Sub-module keys to hide, e.g. ["orders.repair"].'),
+    trialEndsAt: z.string().datetime().nullish().describe('Omit to keep the current date; null clears it.'),
+    expiresAt: z.string().datetime().nullish().describe('Omit to keep the current date; null clears it.'),
+    disabledSubmodules: z.array(z.string()).optional()
+      .describe('The full list of sub-module keys to switch off, e.g. ["orders.repair"]. Replaces the previous list; [] turns them all back on.'),
   }),
   responses: [
     { status: 200, description: 'Entitlement updated.', schema: record },
+    { status: 400, description: 'A sub-module key that does not belong to this module.', schema: errorEnvelope },
     { status: 403, description: 'Not a super admin.', schema: errorEnvelope },
+    { status: 404, description: 'No such tenant, or no such module.', schema: errorEnvelope },
+    { status: 422, description: '`module_required` \u2014 this module cannot be switched off.', schema: errorEnvelope },
   ],
-  changelog: [{ date: TODAY, kind: 'added', note: 'Module entitlement controller.' }],
-  handler: async (req) => asPlatform(async (tx) => {
-    const b = req.body;
-    const row = await tx.one(
-      `insert into tenant_module (id, tenant_id, module_key, enabled, licence, trial_ends_at, expires_at, disabled_submodules)
-       values (gen_random_uuid(), $1, $2, coalesce($3, true), coalesce($4,'included'), $5, $6, coalesce($7,'[]'::jsonb))
-       on conflict (tenant_id, module_key) do update
-         set enabled = coalesce($3, tenant_module.enabled),
-             licence = coalesce($4, tenant_module.licence),
-             trial_ends_at = $5, expires_at = $6,
-             disabled_submodules = coalesce($7, tenant_module.disabled_submodules),
-             updated_at = now()
-       returning *`,
-      [param(req, 'id'), param(req, 'moduleKey'), b.enabled ?? null, b.licence ?? null,
-       b.trialEndsAt ?? null, b.expiresAt ?? null,
-       b.disabledSubmodules ? JSON.stringify(b.disabledSubmodules) : null]);
-    await audit(tx, platformUserId(req), 'module.entitlement', {
-      tenantId: param(req, 'id'), targetType: 'tenant_module', changes: b, ip: req.ip });
+  changelog: [
+    { date: TODAY, kind: 'added', note: 'Module entitlement controller.' },
+    { date: MODULES_DAY, kind: 'changed', note: '`enabled: false` and `disabledSubmodules` are now enforced by the API (403 `module_disabled`), not only hidden from the dock.' },
+    { date: MODULES_DAY, kind: 'fixed', note: 'Sending only `enabled` or `licence` no longer wipes `trialEndsAt` / `expiresAt` \u2014 omitted dates are kept.' },
+    { date: MODULES_DAY, kind: 'changed', note: 'Unknown module keys answer 404 and foreign sub-module keys 400; required modules refuse `enabled: false` with 422 `module_required`.' },
+  ],
+  handler: async (req) => {
+    const tenantId = param(req, 'id');
+    const moduleKey = param(req, 'moduleKey');
+    const spec = moduleSpec(moduleKey);
+    if (!spec) throw new NotFoundError('Module', moduleKey);
+
+    const b = req.body as {
+      enabled?: boolean; licence?: string; trialEndsAt?: string | null; expiresAt?: string | null;
+      disabledSubmodules?: string[];
+    };
+    if (spec.required && (b.enabled === false || (b.disabledSubmodules?.length ?? 0) > 0)) {
+      throw new BusinessRuleError(`${spec.name} cannot be switched off — every other module depends on it.`, 'module_required');
+    }
+    const known = new Set(spec.subModules.map((s) => s.key));
+    const foreign = (b.disabledSubmodules ?? []).filter((k) => !known.has(k));
+    if (foreign.length) {
+      throw new ValidationError(`${foreign.join(', ')} ${foreign.length === 1 ? 'is not a sub-module' : 'are not sub-modules'} of ${spec.name}.`,
+        foreign.map((k) => ({ field: 'disabledSubmodules', message: `Unknown sub-module "${k}".` })));
+    }
+
+    const row = await asPlatform(async (tx) => {
+      const tenant = await tx.maybeOne(`select id from tenant where id = $1 and deleted_at is null`, [tenantId]);
+      if (!tenant) throw new NotFoundError('Tenant', tenantId);
+
+      const before = await tx.maybeOne(
+        `select enabled, licence, trial_ends_at, expires_at, disabled_submodules
+           from tenant_module where tenant_id = $1 and module_key = $2`, [tenantId, moduleKey]);
+
+      const updated = await tx.one(
+        `insert into tenant_module (id, tenant_id, module_key, enabled, licence, trial_ends_at, expires_at, disabled_submodules)
+         values (gen_random_uuid(), $1, $2, coalesce($3, true), coalesce($4, $10), $5, $6, coalesce($7, '[]'::jsonb))
+         on conflict (tenant_id, module_key) do update
+           set enabled = coalesce($3, tenant_module.enabled),
+               licence = coalesce($4, tenant_module.licence),
+               trial_ends_at = case when $8 then $5 else tenant_module.trial_ends_at end,
+               expires_at = case when $9 then $6 else tenant_module.expires_at end,
+               disabled_submodules = coalesce($7, tenant_module.disabled_submodules),
+               updated_at = now()
+         returning *`,
+        [tenantId, moduleKey, b.enabled ?? null, b.licence ?? null,
+         b.trialEndsAt ?? null, b.expiresAt ?? null,
+         b.disabledSubmodules ? JSON.stringify([...new Set(b.disabledSubmodules)]) : null,
+         b.trialEndsAt !== undefined, b.expiresAt !== undefined, spec.defaultLicence]);
+
+      await audit(tx, platformUserId(req), b.enabled === false ? 'module.disable' : b.enabled === true ? 'module.enable' : 'module.entitlement', {
+        tenantId, targetType: 'tenant_module', targetId: (updated as { id: string }).id,
+        changes: { module: moduleKey, before, after: b }, ip: req.ip });
+      return updated;
+    });
+
+    invalidateTenantModules(tenantId);
     return row;
-  }),
+  },
 });
 
 defineRoute({
