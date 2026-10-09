@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import type { Tx } from '../../core/db/client.js';
 import { asPlatform, asTenant, withTenant } from '../../core/db/client.js';
 import { repo } from '../../core/db/repository.js';
-import { ConflictError, NotFoundError, ValidationError } from '../../core/errors/app-error.js';
+import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '../../core/errors/app-error.js';
 import { newId } from '../../core/util/id.js';
 import { logger } from '../../core/util/logger.js';
 import { hashPassword, normalizePhone } from '../identity/auth.service.js';
@@ -20,7 +20,7 @@ import { invalidateUserAccess } from '../identity/access.service.js';
 import { seedSystemRoles } from '../identity/role-seed.js';
 import { provisionTenant } from '../tenancy/provisioning.service.js';
 import { createBranchWithLocations, type BranchInput } from '../tenancy/branch.service.js';
-import { MODULE_CATALOG, type TenantKind } from '../tenancy/module-catalog.js';
+import { MODULE_CATALOG, isLocked, moduleSpec, subModulesOf, type TenantKind } from '../tenancy/module-catalog.js';
 import { ADMIN_ROLE, isAdminRole, TENANT_ROLES } from './roles.js';
 import { audit } from './platform-auth.service.js';
 
@@ -39,7 +39,7 @@ export interface CreateTenantInput {
   /** How many branches they may have. Omitted means no limit. */
   maxBranches?: number | null;
   /** Module keys to switch on. Omit to use each module's default licence. */
-  modules?: Array<{ key: string; licence: 'included' | 'purchased' | 'trial'; trialDays?: number }>;
+  modules?: Array<{ key: string; licence: 'included' | 'purchased' | 'trial'; trialDays?: number; enabled?: boolean }>;
 }
 
 /**
@@ -52,6 +52,14 @@ export async function createTenant(input: CreateTenantInput, actorId: string, ip
   }
   if (input.admin.password.length < 8) {
     throw new ValidationError('The admin password must be at least 8 characters.');
+  }
+
+  for (const m of input.modules ?? []) {
+    const spec = moduleSpec(m.key);
+    if (!spec) throw new ValidationError(`There is no module called "${m.key}".`);
+    if (spec.required && m.enabled === false) {
+      throw new BusinessRuleError(`${spec.name} cannot be switched off — every other module depends on it.`, 'module_required');
+    }
   }
 
   return asPlatform(async (tx) => {
@@ -108,9 +116,9 @@ export async function createTenant(input: CreateTenantInput, actorId: string, ip
             ? new Date(Date.now() + (m.trialDays ?? 30) * 86_400_000)
             : null;
           await ttx.query(
-            `update tenant_module set licence = $2, trial_ends_at = $3, enabled = true, updated_at = now()
+            `update tenant_module set licence = $2, trial_ends_at = $3, enabled = $4, updated_at = now()
               where module_key = $1`,
-            [m.key, m.licence, trialEnds],
+            [m.key, m.licence, trialEnds, m.enabled !== false],
           );
         }
       }
@@ -440,6 +448,49 @@ export async function resetTenantUserPassword(
 }
 
 /** Everything the super admin's tenant detail screen needs. */
+interface ModuleRowDb {
+  module_key: string; enabled: boolean; licence: 'included' | 'purchased' | 'trial' | 'expired';
+  trial_ends_at: string | null; expires_at: string | null; disabled_submodules: string[] | null;
+}
+
+/**
+ * Every module that applies to this kind of business, in catalog order, with
+ * its stored state. A module with no row is on with its default licence —
+ * exactly how the tenant's dock and the API gate treat it — so the console
+ * shows it rather than leaving a switch the operator cannot reach.
+ */
+function moduleRows(kind: TenantKind, rows: ModuleRowDb[], catalog: Map<string, (typeof MODULE_CATALOG)[number]>) {
+  const stored = new Map(rows.map((r) => [r.module_key, r]));
+  const applies = (a: TenantKind) => a === 'both' || kind === 'both' || a === kind;
+  const keys = [
+    ...MODULE_CATALOG.filter((m) => applies(m.appliesTo) || stored.has(m.key)).map((m) => m.key),
+    ...rows.map((r) => r.module_key).filter((k) => !catalog.has(k)),
+  ];
+  return keys.map((key) => {
+    const spec = catalog.get(key);
+    const row = stored.get(key);
+    const state = row
+      ? { enabled: row.enabled, licence: row.licence, trialEndsAt: row.trial_ends_at, expiresAt: row.expires_at, disabled: row.disabled_submodules ?? [] }
+      : null;
+    return {
+      module_key: key,
+      name: spec?.name ?? key,
+      group: spec?.group ?? 'core',
+      description: spec?.description ?? null,
+      enabled: row?.enabled ?? true,
+      licence: row?.licence ?? spec?.defaultLicence ?? 'included',
+      trial_ends_at: row?.trial_ends_at ?? null,
+      expires_at: row?.expires_at ?? null,
+      locked: state ? isLocked(state) : false,
+      disabled_submodules: row?.disabled_submodules ?? [],
+      required: spec?.required === true,
+      /** False for a module the business's kind does not use; shown only because a row exists. */
+      applies: spec ? applies(spec.appliesTo) : false,
+      sub_modules: subModulesOf(key).filter((s) => applies(s.appliesTo)),
+    };
+  });
+}
+
 export async function tenantDetail(tenantId: string) {
   const header = await asPlatform(async (tx) => {
     const tenant = await tx.maybeOne<Record<string, unknown>>(`select * from tenant where id = $1`, [tenantId]);
@@ -470,7 +521,7 @@ export async function tenantDetail(tenantId: string) {
                   left join branch b on b.id = u.default_branch_id
                  where u.deleted_at is null
                  order by b.code nulls first, u.full_name`),
-      tx.query(`select module_key, enabled, licence, trial_ends_at, expires_at from tenant_module order by module_key`),
+      tx.query(`select module_key, enabled, licence, trial_ends_at, expires_at, disabled_submodules from tenant_module order by module_key`),
     ]);
     return { branches, users, modules };
   });
@@ -488,10 +539,6 @@ export async function tenantDetail(tenantId: string) {
     users,
     /** The admin covering every branch, if there is one. */
     globalAdmin: users.find((u) => (u.role_code === 'admin' || u.role_code === 'owner') && u.default_branch_id === null) ?? null,
-    modules: (inner.modules as Array<Record<string, unknown>>).map((m) => ({
-      ...m,
-      name: catalog.get(m.module_key as string)?.name ?? m.module_key,
-      group: catalog.get(m.module_key as string)?.group ?? 'core',
-    })),
+    modules: moduleRows(header.kind as TenantKind, inner.modules as ModuleRowDb[], catalog),
   };
 }

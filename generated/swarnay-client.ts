@@ -5,11 +5,11 @@
  * into the frontend. Every type here comes from the schema that validates the
  * real request, so a mismatch between this file and the server is impossible.
  *
- * Generated 2026-10-04T12:01:23.837Z from 218 endpoints.
+ * Generated 2026-10-08T14:18:00.175Z from 218 endpoints.
  */
 
 export interface ApiError {
-  code: "validation_error" | "unauthorized" | "session_expired" | "invalid_credentials" | "account_locked" | "account_inactive" | "tenant_inactive" | "no_branch" | "rate_limited" | "forbidden" | "branch_forbidden" | "password_change_required" | "module_locked" | "not_found" | "duplicate" | "in_use" | "conflict" | "busy" | "check_failed" | "business_rule" | "insufficient_stock" | "rate_missing" | "numbering_series_missing" | "already_posted" | "backdating_not_allowed" | "invalid_stage_move" | "internal_error" | (string & {});
+  code: "validation_error" | "unauthorized" | "session_expired" | "invalid_credentials" | "account_locked" | "account_inactive" | "tenant_inactive" | "no_branch" | "rate_limited" | "forbidden" | "branch_forbidden" | "password_change_required" | "module_locked" | "module_disabled" | "module_required" | "not_found" | "duplicate" | "in_use" | "conflict" | "busy" | "check_failed" | "business_rule" | "insufficient_stock" | "rate_missing" | "numbering_series_missing" | "already_posted" | "backdating_not_allowed" | "invalid_stage_move" | "internal_error" | (string & {});
   message: string;
   details?: unknown;
   requestId?: string;
@@ -122,7 +122,7 @@ export function createClient(options: ClientOptions) {
         roles: Array<string>;
         /** At the active branch. `*` or `module.*` are wildcards. */
         permissions: Array<string>;
-        /** Modules this shop may see. Absent means never shown. */
+        /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
         modules: Array<{
           key: string;
           order: number;
@@ -141,6 +141,8 @@ export function createClient(options: ClientOptions) {
             name: string;
             status: string;
           }>;
+          /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+          disabledSubModules: Array<string>;
         }>;
         theme: {
           preset_key: string;
@@ -184,7 +186,7 @@ export function createClient(options: ClientOptions) {
         roles: Array<string>;
         /** At the active branch. `*` or `module.*` are wildcards. */
         permissions: Array<string>;
-        /** Modules this shop may see. Absent means never shown. */
+        /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
         modules: Array<{
           key: string;
           order: number;
@@ -203,6 +205,8 @@ export function createClient(options: ClientOptions) {
             name: string;
             status: string;
           }>;
+          /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+          disabledSubModules: Array<string>;
         }>;
         theme: {
           preset_key: string;
@@ -292,7 +296,7 @@ export function createClient(options: ClientOptions) {
       roles: Array<string>;
       /** At the active branch. `*` or `module.*` are wildcards. */
       permissions: Array<string>;
-      /** Modules this shop may see. Absent means never shown. */
+      /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
       modules: Array<{
         key: string;
         order: number;
@@ -311,6 +315,8 @@ export function createClient(options: ClientOptions) {
           name: string;
           status: string;
         }>;
+        /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+        disabledSubModules: Array<string>;
       }>;
       theme: {
         preset_key: string;
@@ -350,7 +356,7 @@ export function createClient(options: ClientOptions) {
       roles: Array<string>;
       /** At the active branch. `*` or `module.*` are wildcards. */
       permissions: Array<string>;
-      /** Modules this shop may see. Absent means never shown. */
+      /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
       modules: Array<{
         key: string;
         order: number;
@@ -369,6 +375,8 @@ export function createClient(options: ClientOptions) {
           name: string;
           status: string;
         }>;
+        /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+        disabledSubModules: Array<string>;
       }>;
       theme: {
         preset_key: string;
@@ -4386,6 +4394,8 @@ export function createClient(options: ClientOptions) {
         key: string;
         licence: "included" | "purchased" | "trial";
         trialDays?: number;
+        /** false creates the tenant with this module switched off. Not allowed for required modules. */
+        enabled?: boolean;
       }>;
     }): Promise<{
       tenantId: string;
@@ -4652,15 +4662,22 @@ export function createClient(options: ClientOptions) {
      * Change a tenant’s module entitlement
      *
      * Grant, revoke, or move a module between included / purchased / trial. A module whose trial or term has lapsed still appears in the tenant’s dock, but locked — so they can see what they are missing rather than having it silently vanish.
+     * 
+     * `enabled: false` switches the module off: it leaves the tenant’s dock and every endpoint belonging to it answers 403 `module_disabled`, for staff and support sessions alike. `disabledSubmodules` does the same for single sub-modules that have permissions of their own (e.g. `pos.purchase`) — see `enforced` on `GET /api/platform/modules`. Other sub-module keys are accepted but nothing checks them yet. Data is never touched, so switching back on restores everything as it was.
+     * 
+     * Master Data, Settings and SaaS Admin are `required` in the catalog and cannot be switched off.
      * `PUT /api/platform/tenants/:id/modules/:moduleKey`
      * Requires `platform.entitlement.update`.
      */
     putPlatformTenantsByIdModulesByModuleKey(params: { id: string; moduleKey: string }, body: {
+      /** false switches the whole module off for this tenant. */
       enabled?: boolean;
       licence?: "included" | "purchased" | "trial" | "expired";
+      /** Omit to keep the current date; null clears it. */
       trialEndsAt?: string | null;
+      /** Omit to keep the current date; null clears it. */
       expiresAt?: string | null;
-      /** Sub-module keys to hide, e.g. ["orders.repair"]. */
+      /** The full list of sub-module keys to switch off, e.g. ["orders.repair"]. Replaces the previous list; [] turns them all back on. */
       disabledSubmodules?: Array<string>;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PUT', `/api/platform/tenants/${encodeURIComponent(params.id)}/modules/${encodeURIComponent(params.moduleKey)}`, { body });

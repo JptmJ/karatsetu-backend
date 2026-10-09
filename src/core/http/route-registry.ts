@@ -12,7 +12,8 @@
  */
 import { Router, type RequestHandler, type Request, type Response } from 'express';
 import { z, type ZodType } from 'zod';
-import { handler as asyncHandler, requirePermission, validate } from './middleware.js';
+import { handler as asyncHandler, requireModule, requirePermission, validate } from './middleware.js';
+import { moduleGateFor } from '../../modules/tenancy/module-catalog.js';
 import { logger } from '../util/logger.js';
 
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
@@ -130,6 +131,12 @@ export function buildRouter(filter?: (route: RouteSpec) => boolean): Router {
     const chain: RequestHandler[] = [];
 
     if (route.permission) chain.push(requirePermission(route.permission));
+    // A module switched off by the super admin is refused at the API, not just
+    // hidden from the menu. Signed-out routes have no tenant to check.
+    const gate = routeScope(route) === 'tenant' && route.auth !== false
+      ? moduleGateFor(route.module, route.permission)
+      : null;
+    if (gate) chain.push(requireModule(gate));
     if (route.params || route.query || route.body) {
       chain.push(validate({ params: route.params, query: route.query, body: route.body }));
     }

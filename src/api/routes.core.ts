@@ -60,7 +60,9 @@ const session = z.object({
     licence: z.enum(LICENCE_STATES), locked: z.boolean().describe('Held but lapsed: show disabled, with a renew prompt.'),
     trialEndsAt: z.string().nullable(), expiresAt: z.string().nullable(),
     subModules: z.array(z.object({ key: z.string(), name: z.string(), status: z.string() })),
-  })).describe('Modules this shop may see. Absent means never shown.'),
+    disabledSubModules: z.array(z.string())
+      .describe('Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`.'),
+  })).describe('Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`.'),
   theme: z.object({ preset_key: z.string(), css_variables: record, logo_url: z.string().nullable() }),
   support: z.object({
     sessionId: uuid, canWrite: z.boolean(), endsAt: z.string(),
@@ -169,6 +171,7 @@ defineRoute({
   changelog: [
     { date: LOGIN_DAY, kind: 'changed', note: 'Now returns the full session (user, shop, modules, theme) — replaces GET /api/tenancy/modules.' },
     { date: '2026-09-26', kind: 'added', note: 'Branch-aware access endpoint.' },
+    { date: '2026-10-08', kind: 'added', note: '`modules[].disabledSubModules`. Re-fetch this after any 403 `module_disabled` so switched-off modules leave the dock.' },
   ],
   handler: async (req) => transaction((tx) => describeSession(tx, req.accessInfo!, req.ctx!.branchId)),
 });

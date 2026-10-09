@@ -12,6 +12,8 @@ import { env, isProduction } from '../config/env.js';
 
 import { effectiveGrants, getUserAccess, resolveBranch, type UserAccess } from '../../modules/identity/access.service.js';
 import { assertCanWrite, loadLiveSession, supportAccess } from '../../modules/platform/support-session.service.js';
+import { assertModuleOpen } from '../../modules/tenancy/module-access.service.js';
+import type { ModuleGate } from '../../modules/tenancy/module-catalog.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -169,6 +171,18 @@ export const requirePermission =
       return next(new ForbiddenError(`You need the "${permission}" permission for this.`));
     }
     next();
+  };
+
+/**
+ * Refuses an endpoint whose module the super admin has switched off for this
+ * tenant. Support sessions are refused too: an operator sees the shop as the
+ * shop sees itself.
+ */
+export const requireModule =
+  (gate: ModuleGate): RequestHandler =>
+  (req, _res, next) => {
+    if (!req.ctx) return next(new UnauthorizedError());
+    assertModuleOpen(req.ctx.tenantId, gate).then(() => next(), next);
   };
 
 /** Validates body / query / params against a Zod schema and replaces them with the parsed value. */
