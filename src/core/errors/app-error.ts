@@ -25,8 +25,8 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message = 'You do not have permission to do this', code = 'forbidden') {
-    super(message, 403, code);
+  constructor(message = 'You do not have permission to do this', code = 'forbidden', details?: unknown) {
+    super(message, 403, code, details);
   }
 }
 

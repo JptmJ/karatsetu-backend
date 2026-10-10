@@ -31,6 +31,7 @@ import { businessDate } from '../../core/util/business-date.js';
 import { reserveDocumentNumbers } from '../numbering/numbering.service.js';
 import { postVoucher, reverseVoucher, type MoneyEntry } from '../accounts/ledger.service.js';
 import { paymentAccount } from '../purchase/purchase.service.js';
+import { modeCharges, postingSettings } from '../accounts/posting.js';
 import { CONFIG } from '../../core/config/definitions.js';
 import { getConfigMany } from '../../core/config/config-service.js';
 
@@ -761,6 +762,7 @@ export async function repay(tx: Tx, loanId: string, input: RepayInput) {
     }
   }
   if (compare(fees, '0') > 0) money.push({ accountCode: '4310', credit: fees, narration: `Closing charges on ${loan.loan_number}` });
+  money.push(...modeCharges(await postingSettings(tx), method, amount, receiptNumber!));
 
   const { voucherId } = await postVoucher(tx, {
     voucherType: 'mortgage', voucherDate: paidOn, branchId, sourceType: 'girvi_repayment', sourceId: receipt.id,

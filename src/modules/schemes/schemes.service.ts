@@ -30,6 +30,7 @@ import { businessDate } from '../../core/util/business-date.js';
 import { reserveDocumentNumbers } from '../numbering/numbering.service.js';
 import { postVoucher, reverseVoucher, type MetalEntry, type MoneyEntry } from '../accounts/ledger.service.js';
 import { paymentAccount } from '../purchase/purchase.service.js';
+import { modeCharges, postingSettings } from '../accounts/posting.js';
 import { activeCustomer, checkCashLimit } from '../sales/sales.service.js';
 import { CONFIG } from '../../core/config/definitions.js';
 import { getConfigMany } from '../../core/config/config-service.js';
@@ -364,6 +365,7 @@ export async function collect(tx: Tx, accountId: string, input: CollectInput) {
   const money: MoneyEntry[] = [
     { ...method.account, debit: paid, narration },
     { accountCode: '2300', credit: paid, partyId: customer.id, narration },
+    ...modeCharges(await postingSettings(tx), method, paid, receiptNumber!),
   ];
   const metal: MetalEntry[] = weightPlan && compare(weight, '0') > 0
     ? [{ accountCode: '2310', metalId: account.metal_id, purityId, weightIn: weight, partyId: customer.id, narration }]

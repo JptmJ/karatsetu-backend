@@ -463,11 +463,11 @@ describe('Orders & Karigar', { timeout: 300_000 }, () => {
 
   it('keeps the books balanced and stock equal to its journal', async () => {
     const snapshot = async () => ({
-      ledger: await ok('/api/accounts/trial-balance'),
+      ledger: await ok('/api/accounts/reports/trial-balance'),
       stock: (await ok('/api/stock/summary')).metals,
     });
     const before = await snapshot();
-    const totals = before.ledger.rows.reduce(
+    const totals = before.ledger.rows.filter((r: Body) => !r.is_group).reduce(
       (acc: { d: number; c: number }, r: Body) => ({ d: acc.d + n(r.debit), c: acc.c + n(r.credit) }), { d: 0, c: 0 });
     expect(totals.d).toBeCloseTo(totals.c, 2);                   // every voucher balances
 

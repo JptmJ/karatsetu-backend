@@ -24,6 +24,8 @@ const schema = z.object({
     .default('false')
     .transform((v) => (v === 'true' ? true : v === 'no-verify' ? ('no-verify' as const) : false)),
   DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+  /** Seconds between checks for report alerts and schedules that are due. 0 turns the timer off. */
+  REPORTS_TICK_SECONDS: z.coerce.number().int().min(0).default(300),
   DATABASE_SCHEMA: z.string().default('public'),
   /** Seconds between database health checks in the log. 0 turns them off. */
   DB_HEARTBEAT_SECONDS: z.coerce.number().int().min(0).default(60),

@@ -19,6 +19,7 @@ import type { RuleSnapshot } from '../masters/pricing/engine.js';
 import { recordMovements, reverseMovementsFor, type MovementInput } from '../inventory/stock.service.js';
 import { postVoucher, reverseVoucher, type MetalEntry, type MoneyEntry } from '../accounts/ledger.service.js';
 import { paymentAccount } from '../purchase/purchase.service.js';
+import { compositionEntries, gstEntries, isComposition, line, modeCharges, postingSettings, revenueEntries } from '../accounts/posting.js';
 import { verifyPassword, normalizePhone } from '../identity/auth.service.js';
 import { effectiveGrants, loadUserAccess } from '../identity/access.service.js';
 import { hasPermission } from '../identity/permissions.js';
@@ -187,11 +188,12 @@ async function priceServices(
   if (!services?.length) return { rows: [], total: '0' };
   const branch = await tx.one<{ state_code: string | null }>(`select state_code from branch where id = $1`, [branchId]);
   const interState = Boolean(branch.state_code && customer.state_code && branch.state_code !== customer.state_code);
+  const composition = await isComposition(tx);
   const rows = services.map((s) => {
     const amount = rs(s.amount);
     if (!(compare(amount, '0') > 0)) throw new ValidationError(`Enter what is charged for "${s.description}".`);
     if (!s.description.trim()) throw new ValidationError('Say what the labour is for.');
-    const gstRate = s.gstPercent ?? '0';
+    const gstRate = composition ? '0' : s.gstPercent ?? '0';
     const tax = rs(div(mul(amount, gstRate), '100'));
     const half = rs(div(tax, '2'));
     return {
@@ -576,19 +578,25 @@ export async function checkout(tx: Tx, input: CheckoutInput) {
 
   const cost = sum(costs);
   const serviceAmount = sum(services.rows.map((s) => s.amount));
-  const gst = add(
-    add(totals('cgstAmount'), add(totals('sgstAmount'), totals('igstAmount'))),
-    sum(services.rows.map((s) => add(s.cgst, add(s.sgst, s.igst)))),
-  );
+  const ps = await postingSettings(tx);
   const money: MoneyEntry[] = [
     ...tenders.map((t) => CREDIT_KINDS.includes(t.method.kind)
       ? { accountCode: '2400', partyId: customer.id, debit: t.amount, narration: `${t.method.kind === 'old_gold' ? `Old gold ${t.reference ?? ''}` : 'Advance'} used on ${docNumber}` }
       : { ...t.method.account, debit: t.amount, narration: `${t.method.name}${t.reference ? ` ${t.reference}` : ''}` }),
+    ...tenders.flatMap((t) => modeCharges(ps, t.method, t.amount, docNumber!)),
     { accountCode: '1100', partyId: customer.id, debit: balance, narration: `Bill ${docNumber}`, againstType: 'sales_invoice', againstId: invoice.id },
-    { accountCode: '4000', credit: totals('taxableAmount'), narration: 'Sales' },
+    ...revenueEntries(ps, {
+      metal: totals('metalAmount'), wastage: totals('wastageAmount'), making: totals('makingAmount'), stone: totals('stoneAmount'),
+      hallmark: totals('hallmarkAmount'), discount: totals('discountAmount'), taxable: totals('taxableAmount'),
+    }, `Bill ${docNumber}`),
     ...(compare(serviceAmount, '0') > 0 ? [{ accountCode: '4100', credit: serviceAmount, narration: 'Labour and services' }] : []),
-    { accountCode: '2200', credit: gst, narration: 'GST payable' },
-    compare(roundOff, '0') >= 0 ? { accountCode: '4900', credit: roundOff, narration: 'Round off' } : { accountCode: '4900', debit: neg(roundOff), narration: 'Round off' },
+    ...gstEntries('output', {
+      cgst: add(totals('cgstAmount'), sum(services.rows.map((s) => s.cgst))),
+      sgst: add(totals('sgstAmount'), sum(services.rows.map((s) => s.sgst))),
+      igst: add(totals('igstAmount'), sum(services.rows.map((s) => s.igst))),
+    }, 'credit', `Bill ${docNumber}`),
+    ...compositionEntries(ps, add(totals('taxableAmount'), serviceAmount), `Bill ${docNumber}`),
+    line('4900', roundOff, 'credit', 'Round off'),
     { accountCode: '5100', debit: cost, narration: 'Cost of goods sold' },
     { accountCode: '1200', credit: cost, narration: 'Stock sold' },
   ];
@@ -693,6 +701,7 @@ export async function createSalesReturn(tx: Tx, input: SalesReturnInput) {
   }
   const src = await tx.query<{ id: string; line_number: number; item_id: string; purity_id: string; metal_id: string; piece_id: string | null; tracking: 'lot' | 'piece';
     location_id: string; gross_weight: Decimal; net_weight: Decimal; fine_weight: Decimal; returned_net_weight: Decimal; taxable_amount: Decimal;
+    metal_amount: Decimal; making_amount: Decimal; wastage_amount: Decimal; stone_amount: Decimal; hallmark_charge: Decimal; discount_amount: Decimal;
     cgst_amount: Decimal; sgst_amount: Decimal; igst_amount: Decimal; line_total: Decimal; cost_value: Decimal; tag_number: string | null; item_name: string }>(
     `select l.*, i.tracking, i.name as item_name, pu.metal_id, sp.tag_number
        from sales_invoice_line l join item i on i.id = l.item_id join purity pu on pu.id = l.purity_id left join stock_piece sp on sp.id = l.piece_id
@@ -714,6 +723,9 @@ export async function createSalesReturn(tx: Tx, input: SalesReturnInput) {
     const piece = (v: Decimal) => (s.piece_id ? v : rs(mul(v, share)));
     return { s, net, share, gross: s.piece_id ? s.gross_weight : g(mul(s.gross_weight, share)), fine: s.piece_id ? s.fine_weight : g(mul(s.fine_weight, share)),
       taxable: piece(s.taxable_amount), gst: piece(add(s.cgst_amount, add(s.sgst_amount, s.igst_amount))), value: piece(s.line_total), cost: piece(s.cost_value),
+      cgst: piece(s.cgst_amount), sgst: piece(s.sgst_amount), igst: piece(s.igst_amount),
+      metal: piece(s.metal_amount), making: piece(s.making_amount), wastage: piece(s.wastage_amount), stone: piece(s.stone_amount),
+      hallmark: piece(s.hallmark_charge), discount: piece(s.discount_amount),
       locationId: location?.id ?? s.location_id };
   });
 
@@ -778,10 +790,16 @@ export async function createSalesReturn(tx: Tx, input: SalesReturnInput) {
   }
 
   const cost = sum(parts.map((p) => p.cost));
+  const ps = await postingSettings(tx);
+  const total = (k: 'metal' | 'making' | 'wastage' | 'stone' | 'hallmark' | 'discount' | 'taxable' | 'cgst' | 'sgst' | 'igst') => sum(parts.map((p) => p[k]));
   const money: MoneyEntry[] = [
-    { accountCode: '4000', debit: sum(parts.map((p) => p.taxable)), narration: `Return ${docNumber}` },
-    { accountCode: '2200', debit: sum(parts.map((p) => p.gst)), narration: 'GST on returned goods' },
-    { accountCode: '4000', credit: deduction, narration: 'Return deduction' },
+    ...revenueEntries(ps, {
+      metal: total('metal'), making: total('making'), wastage: total('wastage'), stone: total('stone'),
+      hallmark: total('hallmark'), discount: total('discount'), taxable: total('taxable'),
+    }, `Return ${docNumber}`, true),
+    ...gstEntries('output', { cgst: total('cgst'), sgst: total('sgst'), igst: total('igst') }, 'debit', `Return ${docNumber}`),
+    ...compositionEntries(ps, total('taxable'), `Return ${docNumber}`, true),
+    { accountCode: ps.revenueSplit === 'single' ? '4000' : '4400', credit: deduction, narration: 'Return deduction' },
     { accountCode: '1100', partyId: customer.id, credit: adjusted, narration: `Return ${docNumber} against ${inv.doc_number}`, againstType: 'sales_invoice', againstId: inv.id },
     refundMethod
       ? { ...refundMethod.account, credit: back, narration: `Refund by ${refundMethod.name}` }
@@ -845,6 +863,7 @@ export async function createReceipt(tx: Tx, input: { customerId: string; amount:
       ...allocations.map((a) => ({ accountCode: '1100', partyId: customer.id, credit: a.amount, narration: `Against ${a.docNumber}`,
         againstType: 'sales_invoice', againstId: a.invoiceId })),
       { accountCode: '2400', partyId: customer.id, credit: left, narration: 'Advance received' },
+      ...modeCharges(await postingSettings(tx), method, amount, docNumber!),
     ],
   });
   return tx.one(`update customer_receipt set voucher_id = $2 where id = $1 returning *`, [receipt.id, voucherId]);

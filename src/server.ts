@@ -6,6 +6,7 @@ import { syncSchema } from './core/db/schema/sync.js';
 import { buildStamp } from './core/util/version.js';
 import { allTables } from './core/db/schema/registry.js';
 import { logger } from './core/util/logger.js';
+import { tick as reportsTick } from './modules/reports/reports.service.js';
 
 /**
  * Boot order matters:
@@ -29,10 +30,16 @@ async function main(): Promise<void> {
     logger.info(`Listening on http://localhost:${env.PORT}`);
   });
   startDbHeartbeat(env.DB_HEARTBEAT_SECONDS);
+  // Report alerts and schedules: delivered to the Reports inbox when due.
+  const reportsTimer = env.REPORTS_TICK_SECONDS > 0 && env.NODE_ENV !== 'test'
+    ? setInterval(() => { reportsTick().catch((err) => logger.warn({ err }, 'reports tick failed')); }, env.REPORTS_TICK_SECONDS * 1000)
+    : null;
+  reportsTimer?.unref();
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'Shutting down');
     stopDbHeartbeat();
+    if (reportsTimer) clearInterval(reportsTimer);
     server.close(async () => {
       await closePool();
       process.exit(0);

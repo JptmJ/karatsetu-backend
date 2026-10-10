@@ -12,6 +12,7 @@ import { add, compare, div, fixed, mul, round, sub, type Decimal } from '../../c
 import { reserveDocumentNumbers } from '../numbering/numbering.service.js';
 import { recordMovements, type MovementInput } from '../inventory/stock.service.js';
 import { postAdjustment } from '../inventory/adjustment.service.js';
+import { postStockValue } from '../accounts/stock-posting.js';
 import { TAG_MAKING_BASES } from '../inventory/inventory.schema.js';
 
 export interface TagPieceInput {
@@ -238,6 +239,17 @@ export async function tagPieces(
          { ...move, direction: 'in' as const, reason: 'purchase' as const, pieceId: c.id, sourceType: 'tagging_lot', sourceId: p.taggingLotId }]
       : [{ ...move, direction: 'in' as const, reason: origin, pieceId: c.id, sourceType: source?.type ?? 'stock_piece', sourceId: source?.id ?? c.id }];
   }));
+
+  // Stock the shop already had before it started on Swarnay: it enters the books against the opening balances.
+  const fresh = pieces.filter((p) => !p.taggingLotId);
+  if (origin === 'opening' && fresh.length) {
+    await postStockValue(tx, {
+      voucherType: 'opening', counterCode: '3900', sourceType: source?.type ?? 'stock_opening', sourceId: source?.id ?? created[0]!.id,
+      narration: `Opening stock, ${fresh.length} piece(s)`,
+      moves: fresh.map((p) => ({ direction: 'in' as const, locationId: p.locationId, purityId: p.purityId, grossWeight: p.grossWeight,
+        fineWeight: p.fine, value: p.costValue ?? '0' })),
+    });
+  }
 
   const byLot = new Map<string, { pieces: number; gross: Decimal; net: Decimal; fine: Decimal; cost: Decimal }>();
   for (const p of pieces) {

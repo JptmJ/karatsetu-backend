@@ -17,7 +17,8 @@ import './routes.schemes.js';
 import './routes.girvi.js';
 import './routes.private.js';
 import './routes.stock.js';
-import './routes.commercial.js';
+import './routes.accounts.js';
+import './routes.reports.js';
 import './routes.users.js';
 import './routes.pricing.js';
 

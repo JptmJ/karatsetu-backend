@@ -183,7 +183,7 @@ waiting. *"Not enough stock. Available: 80g — tried to remove 200g."* — not
 ```bash
 npm run dev          # sync schema, then serve on :4000
 npm run db:migrate   # make the tables match the code (-- --dry-run to only look)
-npm run db:seed      # demo tenants (--fresh wipes first)
+npm run db:seed      # demo tenants: -- --count=N (default 2), --fresh deletes demos first
 npm run gen:client   # regenerate the frontend client
 npm test             # unit tests
 npm run typecheck    # types only

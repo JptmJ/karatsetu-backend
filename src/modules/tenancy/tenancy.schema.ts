@@ -39,6 +39,12 @@ export const tenantTable = defineTable({
      * add thirty of them.
      */
     max_branches: col.int(),
+    /**
+     * Made by the console's "Demo accounts" button, filled with sample data.
+     * Only a demo can be deleted outright — a real business is suspended or
+     * closed, never erased.
+     */
+    is_demo: col.bool({ notNull: true, default: 'false' }),
     activated_at: col.timestamptz(),
   },
   indexes: [{ columns: ['status'] }],

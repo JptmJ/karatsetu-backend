@@ -5,11 +5,11 @@
  * into the frontend. Every type here comes from the schema that validates the
  * real request, so a mismatch between this file and the server is impossible.
  *
- * Generated 2026-10-09T08:17:29.847Z from 258 endpoints.
+ * Generated 2026-10-10T18:36:47.971Z from 327 endpoints.
  */
 
 export interface ApiError {
-  code: "validation_error" | "unauthorized" | "session_expired" | "invalid_credentials" | "account_locked" | "account_inactive" | "tenant_inactive" | "no_branch" | "rate_limited" | "forbidden" | "branch_forbidden" | "password_change_required" | "module_locked" | "not_found" | "duplicate" | "in_use" | "conflict" | "busy" | "check_failed" | "business_rule" | "insufficient_stock" | "rate_missing" | "numbering_series_missing" | "already_posted" | "backdating_not_allowed" | "invalid_stage_move" | "internal_error" | (string & {});
+  code: "validation_error" | "unauthorized" | "session_expired" | "invalid_credentials" | "account_locked" | "account_inactive" | "tenant_inactive" | "no_branch" | "rate_limited" | "forbidden" | "branch_forbidden" | "password_change_required" | "module_locked" | "module_disabled" | "module_required" | "tenant_not_demo" | "demo_code_unavailable" | "not_found" | "duplicate" | "in_use" | "conflict" | "busy" | "check_failed" | "business_rule" | "insufficient_stock" | "rate_missing" | "numbering_series_missing" | "already_posted" | "backdating_not_allowed" | "invalid_stage_move" | "internal_error" | (string & {});
   message: string;
   details?: unknown;
   requestId?: string;
@@ -122,7 +122,7 @@ export function createClient(options: ClientOptions) {
         roles: Array<string>;
         /** At the active branch. `*` or `module.*` are wildcards. */
         permissions: Array<string>;
-        /** Modules this shop may see. Absent means never shown. */
+        /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
         modules: Array<{
           key: string;
           order: number;
@@ -141,6 +141,8 @@ export function createClient(options: ClientOptions) {
             name: string;
             status: string;
           }>;
+          /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+          disabledSubModules: Array<string>;
         }>;
         theme: {
           preset_key: string;
@@ -184,7 +186,7 @@ export function createClient(options: ClientOptions) {
         roles: Array<string>;
         /** At the active branch. `*` or `module.*` are wildcards. */
         permissions: Array<string>;
-        /** Modules this shop may see. Absent means never shown. */
+        /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
         modules: Array<{
           key: string;
           order: number;
@@ -203,6 +205,8 @@ export function createClient(options: ClientOptions) {
             name: string;
             status: string;
           }>;
+          /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+          disabledSubModules: Array<string>;
         }>;
         theme: {
           preset_key: string;
@@ -292,7 +296,7 @@ export function createClient(options: ClientOptions) {
       roles: Array<string>;
       /** At the active branch. `*` or `module.*` are wildcards. */
       permissions: Array<string>;
-      /** Modules this shop may see. Absent means never shown. */
+      /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
       modules: Array<{
         key: string;
         order: number;
@@ -311,6 +315,8 @@ export function createClient(options: ClientOptions) {
           name: string;
           status: string;
         }>;
+        /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+        disabledSubModules: Array<string>;
       }>;
       theme: {
         preset_key: string;
@@ -350,7 +356,7 @@ export function createClient(options: ClientOptions) {
       roles: Array<string>;
       /** At the active branch. `*` or `module.*` are wildcards. */
       permissions: Array<string>;
-      /** Modules this shop may see. Absent means never shown. */
+      /** Modules this shop may see. Absent means never shown — a module switched off by the super admin is absent, and its endpoints answer 403 `module_disabled`. */
       modules: Array<{
         key: string;
         order: number;
@@ -369,6 +375,8 @@ export function createClient(options: ClientOptions) {
           name: string;
           status: string;
         }>;
+        /** Sub-modules the super admin switched off, e.g. ["pos.purchase"]. Hide anything gated on a permission under them; the API answers 403 `module_disabled`. */
+        disabledSubModules: Array<string>;
       }>;
       theme: {
         preset_key: string;
@@ -4603,9 +4611,537 @@ export function createClient(options: ClientOptions) {
       return request<void>('DELETE', `/api/tagging/templates/${encodeURIComponent(params.id)}`);
     },
     /**
+     * Accounts settings in force
+     *
+     * GST registration, how sales are split, card fees, financial year, day/month/year close rules, approval, Tally, revaluation, TDS and the watchlist thresholds. Changed in Settings.
+     * `GET /api/accounts/settings`
+     * Requires `accounts.view`.
+     */
+    getAccountsSettings(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/settings");
+    },
+    /**
+     * The Money Desk: the whole business on one page
+     *
+     * Cash and bank now, today’s money by where it came from, this month’s sales and profit, receivables and payables, GST, girvi and scheme positions, metal held, what needs attention, and where cash is heading.
+     * `GET /api/accounts/desk`
+     * Requires `accounts.view`.
+     */
+    getAccountsDesk(query?: {
+      date?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/desk", { query });
+    },
+    /**
+     * Things in the books that need a look
+     *
+     * Cash below zero, ₹2 lakh cash from one person in a day, back-dated entries, heavy discounts, days not closed, reversals, approvals waiting, and suspense balances.
+     * `GET /api/accounts/watchlist`
+     * Requires `accounts.view`.
+     */
+    getAccountsWatchlist(query?: {
+      days?: number;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/watchlist", { query });
+    },
+    /**
+     * Chart of accounts with balances
+     *
+     * Groups and ledgers in display order, each group carrying the total of everything under it. Balances as at `to` (or over `from`–`to`), for one branch or all.
+     * `GET /api/accounts/chart`
+     * Requires `accounts.view`.
+     */
+    getAccountsChart(query?: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+      includeInactive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/chart", { query });
+    },
+    /**
+     * Cash and bank ledgers with balances
+     *
+     * Each cash drawer and bank account, what the books say is in it, and which payment modes post to it.
+     * `GET /api/accounts/money-accounts`
+     * Requires `accounts.view`.
+     */
+    getAccountsMoneyaccounts(query?: {
+      asOn?: string;
+      branchId?: string;
+    }): Promise<Array<Record<string, unknown>>> {
+      return request<Array<Record<string, unknown>>>('GET', "/api/accounts/money-accounts", { query });
+    },
+    /**
+     * Add a ledger or group
+     *
+     * A new expense head, a second bank account, a drawer for another counter. The code is picked automatically unless one is given.
+     * `POST /api/accounts/chart`
+     * Requires `accounts.chart.manage`.
+     */
+    postAccountsChart(body: {
+      name: string;
+      /** The group it sits under; its type (asset, expense…) comes from there. */
+      parentId: string;
+      code?: string;
+      isGroup?: boolean;
+      ledgerKind?: "cash" | "bank" | "general";
+      description?: string | null;
+      bankName?: string | null;
+      bankAccountNumber?: string | null;
+      bankIfsc?: string | null;
+      tallyName?: string | null;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/chart", { body });
+    },
+    /**
+     * Change a ledger
+     *
+     * Rename, move to another group of the same type, bank details, Tally name, or switch off (only with no balance). Standard ledgers keep their place and stay on.
+     * `PATCH /api/accounts/chart/:id`
+     * Requires `accounts.chart.manage`.
+     */
+    patchAccountsChartById(params: { id: string }, body: {
+      name?: string;
+      /** The group it sits under; its type (asset, expense…) comes from there. */
+      parentId?: string;
+      code?: string;
+      isGroup?: boolean;
+      ledgerKind?: "cash" | "bank" | "general";
+      description?: string | null;
+      bankName?: string | null;
+      bankAccountNumber?: string | null;
+      bankIfsc?: string | null;
+      tallyName?: string | null;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PATCH', `/api/accounts/chart/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Remove a ledger never used
+     *
+     * Only a ledger the shop made, with no entries, nothing under it and no payment mode pointing at it. Otherwise switch it off.
+     * `DELETE /api/accounts/chart/:id`
+     * Requires `accounts.chart.manage`.
+     */
+    deleteAccountsChartById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('DELETE', `/api/accounts/chart/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Enter an expense, payment, receipt, contra or journal
+     *
+     * expense: an expense head, the amount before GST, GST (claimed as input credit, or added to the cost under composition), TDS if held back, and how it was paid — a payment mode, owed to a supplier, or owed for later. payment / receipt: money out to, or in from, a ledger that is not cash or bank (rent, GST to the government, a loan) through a payment mode. contra: cash to bank, bank to cash, bank to bank. journal: any balanced set of lines, including grams on metal ledgers. Control accounts (Debtors, Creditors) need the party. Posted at once, or left waiting when expenses need approval and the person entering cannot approve.
+     * `POST /api/accounts/journals`
+     * Requires `accounts.journal.create`.
+     */
+    postAccountsJournals(body: unknown): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/journals", { body });
+    },
+    /**
+     * Vouchers entered in Accounts
+     *
+     * `GET /api/accounts/journals`
+     * Requires `accounts.view`.
+     */
+    getAccountsJournals(query?: {
+      docType?: "payment" | "receipt" | "contra" | "journal" | "expense" | "opening" | "gst_settlement" | "year_close" | "cash_difference" | "revaluation";
+      status?: "pending_approval" | "posted" | "rejected" | "cancelled";
+      search?: string;
+      accountId?: string;
+      from?: string;
+      to?: string;
+      branchId?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      rows: Array<Record<string, unknown>>;
+      total: number;
+      /** Rupees, as a string. Never a float. */
+      postedAmount: string;
+    }> {
+      return request<{
+      rows: Array<Record<string, unknown>>;
+      total: number;
+      /** Rupees, as a string. Never a float. */
+      postedAmount: string;
+    }>('GET', "/api/accounts/journals", { query });
+    },
+    /**
+     * One voucher with its lines
+     *
+     * `GET /api/accounts/journals/:id`
+     * Requires `accounts.view`.
+     */
+    getAccountsJournalsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/accounts/journals/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Approve an expense and post it
+     *
+     * `POST /api/accounts/journals/:id/approve`
+     * Requires `accounts.journal.approve`.
+     */
+    postAccountsJournalsByIdApprove(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/journals/${encodeURIComponent(params.id)}/approve`);
+    },
+    /**
+     * Turn down an expense waiting for approval
+     *
+     * `POST /api/accounts/journals/:id/reject`
+     * Requires `accounts.journal.approve`.
+     */
+    postAccountsJournalsByIdReject(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/journals/${encodeURIComponent(params.id)}/reject`, { body });
+    },
+    /**
+     * Cancel a voucher
+     *
+     * A posted voucher is undone by its mirror entry, dated today; the original stays for the record. Entries written by a day or month close are undone by reopening that close instead.
+     * `POST /api/accounts/journals/:id/cancel`
+     * Requires `accounts.journal.cancel`.
+     */
+    postAccountsJournalsByIdCancel(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/journals/${encodeURIComponent(params.id)}/cancel`, { body });
+    },
+    /**
+     * Opening balances
+     *
+     * What every ledger, customer and supplier started with, in rupees and grams, and how much does not yet add up.
+     * `GET /api/accounts/opening`
+     * Requires `accounts.view`.
+     */
+    getAccountsOpening(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/opening");
+    },
+    /**
+     * Set opening balances
+     *
+     * Send the figures as they should be; only the change is posted, as one opening voucher. Whatever does not balance waits in Opening Balance Difference.
+     * `POST /api/accounts/opening`
+     * Requires `accounts.opening.manage`.
+     */
+    postAccountsOpening(body: {
+      date?: string;
+      ledgers?: Array<{
+        accountId: string;
+        /** Rupees, as a string. Never a float. */
+        debit?: string;
+        /** Rupees, as a string. Never a float. */
+        credit?: string;
+      }>;
+      parties?: Array<{
+        partyId: string;
+        accountCode: "1100" | "2000" | "2400";
+        /** Rupees, as a string. Never a float. */
+        debit?: string;
+        /** Rupees, as a string. Never a float. */
+        credit?: string;
+      }>;
+      metals?: Array<{
+        accountCode: "1220" | "2010" | "2100";
+        partyId?: string | null;
+        metalId: string;
+        purityId?: string | null;
+        /** Grams, as a string. */
+        weightIn?: string;
+        /** Grams, as a string. */
+        weightOut?: string;
+      }>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/opening", { body });
+    },
+    /**
+     * The cash drawer today
+     *
+     * For each cash ledger at the branch: what it opened with, what came in and went out by source, what should be there now, and its open/close record.
+     * `GET /api/accounts/day`
+     * Requires `accounts.view`.
+     */
+    getAccountsDay(query?: {
+      date?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/day", { query });
+    },
+    /**
+     * Open the day
+     *
+     * Counts the drawer (or takes what the books carried forward, where counting on open is off). A difference is written to Cash Short / Excess.
+     * `POST /api/accounts/day/open`
+     * Requires `accounts.day.manage`.
+     */
+    postAccountsDayOpen(body: {
+      /** The cash ledger; the main drawer when left out. */
+      accountId?: string;
+      /** Rupees, as a string. Never a float. */
+      counted?: string;
+      denominations?: Record<string, unknown>;
+      note?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/day/open", { body });
+    },
+    /**
+     * Close the day
+     *
+     * Counts the drawer against what the books say, writes any difference to Cash Short / Excess, and freezes the day’s summary. With the lock on, nothing more can be dated that day at the branch.
+     * `POST /api/accounts/day/close`
+     * Requires `accounts.day.manage`.
+     */
+    postAccountsDayClose(body: {
+      /** The cash ledger; the main drawer when left out. */
+      accountId?: string;
+      /** Rupees, as a string. Never a float. */
+      counted?: string;
+      denominations?: Record<string, unknown>;
+      note?: string;
+      branchId?: string;
+      date?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/day/close", { body });
+    },
+    /**
+     * Reopen a closed day
+     *
+     * `POST /api/accounts/day/:id/reopen`
+     * Requires `accounts.day.reopen`.
+     */
+    postAccountsDayByIdReopen(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/day/${encodeURIComponent(params.id)}/reopen`, { body });
+    },
+    /**
+     * Past day closes
+     *
+     * `GET /api/accounts/day/history`
+     * Requires `accounts.view`.
+     */
+    getAccountsDayHistory(query?: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+      limit?: number;
+    }): Promise<Array<Record<string, unknown>>> {
+      return request<Array<Record<string, unknown>>>('GET', "/api/accounts/day/history", { query });
+    },
+    /**
+     * Months and the year, and where each stands
+     *
+     * Every month of the financial year: open, due to close, closed or locked, its profit, and what stands in the way of closing it.
+     * `GET /api/accounts/periods`
+     * Requires `accounts.view`.
+     */
+    getAccountsPeriods(query?: {
+      date?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/periods", { query });
+    },
+    /**
+     * Close a month
+     *
+     * Sets off GST (output less input into GST Payable, or credit carried forward), optionally marks metal stock to market for the month-end figures, and locks the month.
+     * `POST /api/accounts/periods/close-month`
+     * Requires `accounts.period.close`.
+     */
+    postAccountsPeriodsClosemonth(body: {
+      month: string;
+      note?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/periods/close-month", { body });
+    },
+    /**
+     * Close the financial year
+     *
+     * Moves the year’s profit (or loss) to capital or retained earnings, branch by branch, and locks the year. Months still open are closed with it when asked.
+     * `POST /api/accounts/periods/close-year`
+     * Requires `accounts.period.close`.
+     */
+    postAccountsPeriodsCloseyear(body: {
+      /** Any date in the year to close; the last finished year when left out. */
+      date?: string;
+      closeOpenMonths?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/periods/close-year", { body });
+    },
+    /**
+     * Reopen a closed month or year
+     *
+     * `POST /api/accounts/periods/:id/reopen`
+     * Requires `accounts.period.reopen`.
+     */
+    postAccountsPeriodsByIdReopen(params: { id: string }, body: {
+      reason: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/periods/${encodeURIComponent(params.id)}/reopen`, { body });
+    },
+    /**
+     * Every voucher from every module (day book)
+     *
+     * Sales, purchases, old gold, schemes, girvi, karigar, stock and Accounts’ own — each with its lines and the document it came from. Reversals are left out unless asked for.
+     * `GET /api/accounts/vouchers`
+     * Requires `accounts.view`.
+     */
+    getAccountsVouchers(query?: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+      voucherType?: "opening" | "purchase" | "purchase_return" | "sale" | "sales_return" | "receipt" | "payment" | "journal" | "old_gold" | "scheme" | "mortgage" | "production" | "contra" | "expense" | "stock_journal" | "branch_transfer" | "gst_settlement" | "year_close" | "cash_difference" | "revaluation";
+      search?: string;
+      accountId?: string;
+      includeReversed?: boolean;
+      reversedOnly?: boolean;
+      limit?: number;
+      offset?: number;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/vouchers", { query });
+    },
+    /**
+     * One voucher: its money and metal lines
+     *
+     * `GET /api/accounts/vouchers/:id`
+     * Requires `accounts.view`.
+     */
+    getAccountsVouchersById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', `/api/accounts/vouchers/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Trial balance
+     *
+     * Opening, debits, credits and closing for every ledger and group. If debits and credits ever differ, something is badly wrong.
+     * `GET /api/accounts/reports/trial-balance`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsTrialbalance(query?: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+      showZero?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/trial-balance", { query });
+    },
+    /**
+     * Ledger statement
+     *
+     * Every entry in a ledger (or every ledger under a group) with a running balance; grams too on metal ledgers. Optionally one party on a control account.
+     * `GET /api/accounts/reports/ledger`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsLedger(query?: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+      accountId: string;
+      partyId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/ledger", { query });
+    },
+    /**
+     * Customer or supplier statement
+     *
+     * Bills, payments, advances, girvi and savings for one person as one running balance, plus grams owed either way.
+     * `GET /api/accounts/reports/party`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsParty(query?: {
+      partyId: string;
+      from?: string;
+      to?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/party", { query });
+    },
+    /**
+     * Profit & loss
+     *
+     * Trading (sales less what was sold cost) to gross profit, then other income and expenses to net profit, against the period before. Shows where the margin came from: metal, making, wastage, stones.
+     * `GET /api/accounts/reports/profit-loss`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsProfitloss(query?: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/profit-loss", { query });
+    },
+    /**
+     * Balance sheet
+     *
+     * What the business owns and owes as at a date, by group, with the profit not yet closed to capital.
+     * `GET /api/accounts/reports/balance-sheet`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsBalancesheet(query?: {
+      asOn?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/balance-sheet", { query });
+    },
+    /**
+     * Who owes and for how long
+     *
+     * Receivables or payables per party in 0–30, 31–60, 61–90, 91–180 and 180+ day buckets, oldest bill cleared first, with what is past the party’s credit days.
+     * `GET /api/accounts/reports/ageing`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsAgeing(query?: {
+      kind: "receivable" | "payable";
+      asOn?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/ageing", { query });
+    },
+    /**
+     * GST summary
+     *
+     * Output and input GST by CGST, SGST and IGST, the net payable, B2B and B2C sales, purchases, returns, and the HSN summary for the return.
+     * `GET /api/accounts/reports/gst`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsGst(query?: {
+      from?: string;
+      to?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/gst", { query });
+    },
+    /**
+     * Metal position
+     *
+     * Fine grams in stock and with karigars, against grams owed to suppliers, customers and savings members, and girvi gold held as security, valued at today’s rate.
+     * `GET /api/accounts/reports/metal-position`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsMetalposition(query?: {
+      asOn?: string;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/metal-position", { query });
+    },
+    /**
+     * Cash forecast
+     *
+     * What should come in (customer dues, girvi, savings, order balances) and go out (suppliers, GST, TDS, wages) day by day, and the lowest point cash reaches.
+     * `GET /api/accounts/reports/forecast`
+     * Requires `accounts.reports.view`.
+     */
+    getAccountsReportsForecast(query?: {
+      days?: number;
+      branchId?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/reports/forecast", { query });
+    },
+    /**
      * The precious metal ledger, in fine grams
      *
-     * The gram side of the dual ledger. Weights are fine (pure) so purities are comparable.
+     * The gram side of the dual ledger. Weights are fine (pure) so purities are comparable. The balance covers every matching entry, not only the page.
      * `GET /api/accounts/metal-ledger`
      * Requires `accounts.metal.view`.
      */
@@ -4619,47 +5155,29 @@ export function createClient(options: ClientOptions) {
       offset?: number;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
+      total: number;
       /** Grams, as a string. */
       balance: string;
+      /** Grams, as a string. */
+      weightIn: string;
+      /** Grams, as a string. */
+      weightOut: string;
     }> {
       return request<{
       rows: Array<Record<string, unknown>>;
+      total: number;
       /** Grams, as a string. */
       balance: string;
+      /** Grams, as a string. */
+      weightIn: string;
+      /** Grams, as a string. */
+      weightOut: string;
     }>('GET', "/api/accounts/metal-ledger", { query });
-    },
-    /**
-     * Trial balance
-     *
-     * Debits and credits per account. If these do not match, something is badly wrong — they always should.
-     * `GET /api/accounts/trial-balance`
-     * Requires `accounts.cash.view`.
-     */
-    getAccountsTrialbalance(query?: {
-      from?: string;
-      to?: string;
-      branchId?: string;
-    }): Promise<{
-      rows: Array<Record<string, unknown>>;
-      /** Rupees, as a string. Never a float. */
-      totalDebit: string;
-      /** Rupees, as a string. Never a float. */
-      totalCredit: string;
-      balanced: boolean;
-    }> {
-      return request<{
-      rows: Array<Record<string, unknown>>;
-      /** Rupees, as a string. Never a float. */
-      totalDebit: string;
-      /** Rupees, as a string. Never a float. */
-      totalCredit: string;
-      balanced: boolean;
-    }>('GET', "/api/accounts/trial-balance", { query });
     },
     /**
      * Karigar metal and ghat ledger
      *
-     * Metal issued to each goldsmith, what came back, and the ghat (loss). Loss above the agreed allowance is recoverable and is what this screen exists to surface.
+     * Metal issued to each goldsmith, what came back, and the ghat (loss). The balance covers every matching entry, not only the page.
      * `GET /api/accounts/karigar-ledger`
      * Requires `accounts.ghat.view`.
      */
@@ -4671,14 +5189,613 @@ export function createClient(options: ClientOptions) {
       offset?: number;
     }): Promise<{
       rows: Array<Record<string, unknown>>;
+      total: number;
       /** Grams, as a string. */
       metalBalance: string;
     }> {
       return request<{
       rows: Array<Record<string, unknown>>;
+      total: number;
       /** Grams, as a string. */
       metalBalance: string;
     }>('GET', "/api/accounts/karigar-ledger", { query });
+    },
+    /**
+     * Bank reconciliation
+     *
+     * The statement lines and the book entries side by side, what is matched, and why the bank and the books differ.
+     * `GET /api/accounts/bank/reconciliation`
+     * Requires `accounts.bank.manage`.
+     */
+    getAccountsBankReconciliation(query?: {
+      accountId: string;
+      from?: string;
+      to?: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/accounts/bank/reconciliation", { query });
+    },
+    /**
+     * Import bank statement lines
+     *
+     * Lines read from the bank’s CSV or typed in. A line already imported is skipped. Matching runs straight after.
+     * `POST /api/accounts/bank/statement`
+     * Requires `accounts.bank.manage`.
+     */
+    postAccountsBankStatement(body: {
+      accountId: string;
+      rows: Array<{
+        date: string;
+        description?: string;
+        reference?: string;
+        /** Rupees, as a string. Never a float. */
+        withdrawal?: string;
+        /** Rupees, as a string. Never a float. */
+        deposit?: string;
+        balance?: string;
+      }>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/bank/statement", { body });
+    },
+    /**
+     * Match statement lines to the books automatically
+     *
+     * Same amount and direction, within a week, a matching reference preferred. Each entry is used once.
+     * `POST /api/accounts/bank/auto-match`
+     * Requires `accounts.bank.manage`.
+     */
+    postAccountsBankAutomatch(body: {
+      accountId: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/bank/auto-match", { body });
+    },
+    /**
+     * Match a statement line to an entry
+     *
+     * `POST /api/accounts/bank/lines/:id/match`
+     * Requires `accounts.bank.manage`.
+     */
+    postAccountsBankLinesByIdMatch(params: { id: string }, body: {
+      entryId: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/bank/lines/${encodeURIComponent(params.id)}/match`, { body });
+    },
+    /**
+     * Undo a match
+     *
+     * `POST /api/accounts/bank/lines/:id/unmatch`
+     * Requires `accounts.bank.manage`.
+     */
+    postAccountsBankLinesByIdUnmatch(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/bank/lines/${encodeURIComponent(params.id)}/unmatch`);
+    },
+    /**
+     * Set a statement line aside
+     *
+     * For a line that has no entry in the books on purpose (a bank-side correction reversed the same day).
+     * `POST /api/accounts/bank/lines/:id/ignore`
+     * Requires `accounts.bank.manage`.
+     */
+    postAccountsBankLinesByIdIgnore(params: { id: string }, body: {
+      note: string;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/bank/lines/${encodeURIComponent(params.id)}/ignore`, { body });
+    },
+    /**
+     * Tick a bank entry as cleared
+     *
+     * Without a statement line — from a passbook, say. Send null to untick.
+     * `POST /api/accounts/bank/entries/:id/clear`
+     * Requires `accounts.bank.manage`.
+     */
+    postAccountsBankEntriesByIdClear(params: { id: string }, body: {
+      clearedOn: string | null;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/accounts/bank/entries/${encodeURIComponent(params.id)}/clear`, { body });
+    },
+    /**
+     * Vouchers not yet sent to Tally
+     *
+     * `GET /api/accounts/tally/status`
+     * Requires `accounts.tally.export`.
+     */
+    getAccountsTallyStatus(): Promise<{
+      pending: number;
+    }> {
+      return request<{
+      pending: number;
+    }>('GET', "/api/accounts/tally/status");
+    },
+    /**
+     * Export to Tally (XML)
+     *
+     * Ledgers and vouchers as Tally XML, customers and suppliers as their own ledgers. With onlyNew, only what has not gone before; with markExported, those are marked as sent.
+     * `POST /api/accounts/tally/export`
+     * Requires `accounts.tally.export`.
+     */
+    postAccountsTallyExport(body: {
+      from?: string;
+      to?: string;
+      onlyNew?: boolean;
+      markExported?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/accounts/tally/export", { body });
+    },
+    /**
+     * Everything Reports opens with
+     *
+     * The categories and ready reports this person may see, their saved and shared reports, pins, recent runs and unread inbox count.
+     * `GET /api/reports`
+     * Requires `reports.view`.
+     */
+    getReports(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/reports");
+    },
+    /**
+     * Reports settings in force
+     *
+     * `GET /api/reports/settings`
+     * Requires `reports.view`.
+     */
+    getReportsSettings(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/reports/settings");
+    },
+    /**
+     * The data a report can be built from
+     *
+     * Each data set with the fields this person may see: type, whether it can be grouped, its default total, and how to pick values. Cost and margin appear only with reports.cost.view. Date groupings: day, week, month, quarter, year, weekday.
+     * `GET /api/reports/datasets`
+     * Requires `reports.view`.
+     */
+    getReportsDatasets(): Promise<Array<Record<string, unknown>>> {
+      return request<Array<Record<string, unknown>>>('GET', "/api/reports/datasets");
+    },
+    /**
+     * Values to filter a field by
+     *
+     * The most common values of a groupable field, optionally matching a search, for filter pickers.
+     * `GET /api/reports/datasets/:dataset/values/:field`
+     * Requires `reports.view`.
+     */
+    getReportsDatasetsByDatasetValuesByField(params: { dataset: string; field: string }, query?: {
+      search?: string;
+    }): Promise<Array<Record<string, unknown>>> {
+      return request<Array<Record<string, unknown>>>('GET', `/api/reports/datasets/${encodeURIComponent(params.dataset)}/values/${encodeURIComponent(params.field)}`, { query });
+    },
+    /**
+     * Run a report
+     *
+     * A ready report (`ref: "cat:<key>"`), a saved one (`ref: "view:<id>"`), or a design (`spec`), or a ready report with its settings changed (both). List mode returns rows a page at a time; summary mode (groupBy / measures) returns the groups. Totals always cover every matching row. With compare, the same period before is worked out alongside. With export, up to the download limit is returned.
+     * `POST /api/reports/run`
+     * Requires `reports.view`.
+     */
+    postReportsRun(body: {
+      ref?: string;
+      spec?: {
+        dataset: string;
+        columns?: Array<string>;
+        groupBy?: Array<string>;
+        measures?: Array<{
+          field: string;
+          agg: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+        }>;
+        filters?: Array<{
+          field: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        having?: Array<{
+          key: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        range?: {
+          preset?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_fy" | "last_fy" | "last_7" | "last_30" | "last_90" | "last_365" | "all" | "custom";
+          from?: string;
+          to?: string;
+        };
+        branchId?: string | null;
+        sort?: Array<{
+          key: string;
+          dir: "asc" | "desc";
+        }>;
+        limit?: number;
+        compare?: boolean;
+        chart?: "table" | "bar" | "line" | "donut" | "area";
+      };
+      name?: string;
+      offset?: number;
+      limit?: number;
+      export?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/reports/run", { body });
+    },
+    /**
+     * Save a report
+     *
+     * Keeps a design (or a ready report with changes) under its own name. Shared reports are seen by everyone who may see that kind of report.
+     * `POST /api/reports/views`
+     * Requires `reports.design`.
+     */
+    postReportsViews(body: {
+      name: string;
+      description?: string | null;
+      spec: {
+        dataset: string;
+        columns?: Array<string>;
+        groupBy?: Array<string>;
+        measures?: Array<{
+          field: string;
+          agg: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+        }>;
+        filters?: Array<{
+          field: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        having?: Array<{
+          key: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        range?: {
+          preset?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_fy" | "last_fy" | "last_7" | "last_30" | "last_90" | "last_365" | "all" | "custom";
+          from?: string;
+          to?: string;
+        };
+        branchId?: string | null;
+        sort?: Array<{
+          key: string;
+          dir: "asc" | "desc";
+        }>;
+        limit?: number;
+        compare?: boolean;
+        chart?: "table" | "bar" | "line" | "donut" | "area";
+      };
+      baseKey?: string | null;
+      isShared?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/reports/views", { body });
+    },
+    /**
+     * Change a saved report
+     *
+     * `PUT /api/reports/views/:id`
+     * Requires `reports.design`.
+     */
+    putReportsViewsById(params: { id: string }, body: {
+      name: string;
+      description?: string | null;
+      spec: {
+        dataset: string;
+        columns?: Array<string>;
+        groupBy?: Array<string>;
+        measures?: Array<{
+          field: string;
+          agg: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+        }>;
+        filters?: Array<{
+          field: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        having?: Array<{
+          key: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        range?: {
+          preset?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_fy" | "last_fy" | "last_7" | "last_30" | "last_90" | "last_365" | "all" | "custom";
+          from?: string;
+          to?: string;
+        };
+        branchId?: string | null;
+        sort?: Array<{
+          key: string;
+          dir: "asc" | "desc";
+        }>;
+        limit?: number;
+        compare?: boolean;
+        chart?: "table" | "bar" | "line" | "donut" | "area";
+      };
+      baseKey?: string | null;
+      isShared?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PUT', `/api/reports/views/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Remove a saved report
+     *
+     * `DELETE /api/reports/views/:id`
+     * Requires `reports.design`.
+     */
+    deleteReportsViewsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('DELETE', `/api/reports/views/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Set the reports pinned, in order
+     *
+     * Send the whole list. Pinned reports also show on the Dashboard.
+     * `PUT /api/reports/pins`
+     * Requires `reports.view`.
+     */
+    putReportsPins(body: {
+      refs: Array<string>;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PUT', "/api/reports/pins", { body });
+    },
+    /**
+     * Reports and alerts delivered to me
+     *
+     * Anything due is delivered first, so the inbox is current when it opens.
+     * `GET /api/reports/inbox`
+     * Requires `reports.view`.
+     */
+    getReportsInbox(query?: {
+      unreadOnly?: boolean;
+      limit?: number;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('GET', "/api/reports/inbox", { query });
+    },
+    /**
+     * Mark an inbox item read
+     *
+     * `POST /api/reports/inbox/:id/read`
+     * Requires `reports.view`.
+     */
+    postReportsInboxByIdRead(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/reports/inbox/${encodeURIComponent(params.id)}/read`);
+    },
+    /**
+     * Alert rules
+     *
+     * `GET /api/reports/alerts`
+     * Requires `reports.alerts.manage`.
+     */
+    getReportsAlerts(): Promise<Array<Record<string, unknown>>> {
+      return request<Array<Record<string, unknown>>>('GET', "/api/reports/alerts");
+    },
+    /**
+     * Create an alert
+     *
+     * Watches one total of a report (no groupings) against a limit, hourly or daily. Crossing the limit delivers once to each recipient allowed to see the report; it fires again only after the figure has come back.
+     * `POST /api/reports/alerts`
+     * Requires `reports.alerts.manage`.
+     */
+    postReportsAlerts(body: {
+      name: string;
+      spec: {
+        dataset: string;
+        columns?: Array<string>;
+        groupBy?: Array<string>;
+        measures?: Array<{
+          field: string;
+          agg: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+        }>;
+        filters?: Array<{
+          field: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        having?: Array<{
+          key: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        range?: {
+          preset?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_fy" | "last_fy" | "last_7" | "last_30" | "last_90" | "last_365" | "all" | "custom";
+          from?: string;
+          to?: string;
+        };
+        branchId?: string | null;
+        sort?: Array<{
+          key: string;
+          dir: "asc" | "desc";
+        }>;
+        limit?: number;
+        compare?: boolean;
+        chart?: "table" | "bar" | "line" | "donut" | "area";
+      };
+      measureKey: string;
+      op: "gt" | "gte" | "lt" | "lte";
+      threshold: number;
+      frequency: "hourly" | "daily";
+      recipientIds?: Array<string>;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/reports/alerts", { body });
+    },
+    /**
+     * Change an alert
+     *
+     * `PUT /api/reports/alerts/:id`
+     * Requires `reports.alerts.manage`.
+     */
+    putReportsAlertsById(params: { id: string }, body: {
+      name: string;
+      spec: {
+        dataset: string;
+        columns?: Array<string>;
+        groupBy?: Array<string>;
+        measures?: Array<{
+          field: string;
+          agg: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+        }>;
+        filters?: Array<{
+          field: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        having?: Array<{
+          key: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        range?: {
+          preset?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_fy" | "last_fy" | "last_7" | "last_30" | "last_90" | "last_365" | "all" | "custom";
+          from?: string;
+          to?: string;
+        };
+        branchId?: string | null;
+        sort?: Array<{
+          key: string;
+          dir: "asc" | "desc";
+        }>;
+        limit?: number;
+        compare?: boolean;
+        chart?: "table" | "bar" | "line" | "donut" | "area";
+      };
+      measureKey: string;
+      op: "gt" | "gte" | "lt" | "lte";
+      threshold: number;
+      frequency: "hourly" | "daily";
+      recipientIds?: Array<string>;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PUT', `/api/reports/alerts/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Check an alert now
+     *
+     * `POST /api/reports/alerts/:id/check`
+     * Requires `reports.alerts.manage`.
+     */
+    postReportsAlertsByIdCheck(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/reports/alerts/${encodeURIComponent(params.id)}/check`);
+    },
+    /**
+     * Remove an alert
+     *
+     * `DELETE /api/reports/alerts/:id`
+     * Requires `reports.alerts.manage`.
+     */
+    deleteReportsAlertsById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('DELETE', `/api/reports/alerts/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Scheduled reports
+     *
+     * `GET /api/reports/schedules`
+     * Requires `reports.schedules.manage`.
+     */
+    getReportsSchedules(): Promise<Array<Record<string, unknown>>> {
+      return request<Array<Record<string, unknown>>>('GET', "/api/reports/schedules");
+    },
+    /**
+     * Schedule a report
+     *
+     * Runs a report daily, weekly or monthly at a time of day in the shop’s timezone and delivers it to the recipients’ Reports inbox.
+     * `POST /api/reports/schedules`
+     * Requires `reports.schedules.manage`.
+     */
+    postReportsSchedules(body: {
+      name: string;
+      ref?: string | null;
+      spec?: {
+        dataset: string;
+        columns?: Array<string>;
+        groupBy?: Array<string>;
+        measures?: Array<{
+          field: string;
+          agg: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+        }>;
+        filters?: Array<{
+          field: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        having?: Array<{
+          key: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        range?: {
+          preset?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_fy" | "last_fy" | "last_7" | "last_30" | "last_90" | "last_365" | "all" | "custom";
+          from?: string;
+          to?: string;
+        };
+        branchId?: string | null;
+        sort?: Array<{
+          key: string;
+          dir: "asc" | "desc";
+        }>;
+        limit?: number;
+        compare?: boolean;
+        chart?: "table" | "bar" | "line" | "donut" | "area";
+      };
+      frequency: "daily" | "weekly" | "monthly";
+      day?: number | null;
+      atTime: string;
+      recipientIds?: Array<string>;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', "/api/reports/schedules", { body });
+    },
+    /**
+     * Change a schedule
+     *
+     * `PUT /api/reports/schedules/:id`
+     * Requires `reports.schedules.manage`.
+     */
+    putReportsSchedulesById(params: { id: string }, body: {
+      name: string;
+      ref?: string | null;
+      spec?: {
+        dataset: string;
+        columns?: Array<string>;
+        groupBy?: Array<string>;
+        measures?: Array<{
+          field: string;
+          agg: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+        }>;
+        filters?: Array<{
+          field: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        having?: Array<{
+          key: string;
+          op: "eq" | "neq" | "in" | "not_in" | "gt" | "gte" | "lt" | "lte" | "between" | "contains" | "not_contains" | "starts" | "empty" | "not_empty";
+          value?: unknown;
+        }>;
+        range?: {
+          preset?: "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month" | "this_quarter" | "last_quarter" | "this_fy" | "last_fy" | "last_7" | "last_30" | "last_90" | "last_365" | "all" | "custom";
+          from?: string;
+          to?: string;
+        };
+        branchId?: string | null;
+        sort?: Array<{
+          key: string;
+          dir: "asc" | "desc";
+        }>;
+        limit?: number;
+        compare?: boolean;
+        chart?: "table" | "bar" | "line" | "donut" | "area";
+      };
+      frequency: "daily" | "weekly" | "monthly";
+      day?: number | null;
+      atTime: string;
+      recipientIds?: Array<string>;
+      isActive?: boolean;
+    }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('PUT', `/api/reports/schedules/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Send a scheduled report now
+     *
+     * `POST /api/reports/schedules/:id/send`
+     * Requires `reports.schedules.manage`.
+     */
+    postReportsSchedulesByIdSend(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('POST', `/api/reports/schedules/${encodeURIComponent(params.id)}/send`);
+    },
+    /**
+     * Remove a schedule
+     *
+     * `DELETE /api/reports/schedules/:id`
+     * Requires `reports.schedules.manage`.
+     */
+    deleteReportsSchedulesById(params: { id: string }): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('DELETE', `/api/reports/schedules/${encodeURIComponent(params.id)}`);
     },
     /**
      * Every permission a role can hold, grouped by module
@@ -4959,6 +6076,8 @@ export function createClient(options: ClientOptions) {
       kind?: "manufacturer" | "retailer" | "both";
       /** Matches code or name. */
       search?: string;
+      /** true = only demo businesses, false = only real ones. Omit for both. */
+      demo?: "true" | "false";
       limit?: number;
       offset?: number;
     }): Promise<{
@@ -5016,6 +6135,8 @@ export function createClient(options: ClientOptions) {
         key: string;
         licence: "included" | "purchased" | "trial";
         trialDays?: number;
+        /** false creates the tenant with this module switched off. Not allowed for required modules. */
+        enabled?: boolean;
       }>;
     }): Promise<{
       tenantId: string;
@@ -5066,6 +6187,349 @@ export function createClient(options: ClientOptions) {
       maxBranches?: number | null;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PATCH', `/api/platform/tenants/${encodeURIComponent(params.id)}`, { body });
+    },
+    /**
+     * Make demo businesses full of sample data
+     *
+     * Give a count; each demo is a complete business made through the same services as a real one: one to three branches, an owner, a branch admin per branch, two to four staff roles named and given random permissions, one or two staff per branch, and sample data in every module — rates, items, formulas, customers, suppliers, karigars, purchases, tagged stock, bills, receipts, an approval memo, orders, old gold, scheme members with their collections, girvi loans and expenses.
+     * 
+     * Codes are `demo-xxxxx` and every login in a demo shares one password, shown only by the job. No password change is asked for at first sign-in.
+     * 
+     * A demo takes tens of seconds, so this answers 202 at once with a job; poll `GET /api/platform/demo-tenants/jobs/:id`. Demos are made one at a time across the platform. A demo whose business, people or masters cannot be made is removed again and listed under `failures`.
+     * `POST /api/platform/demo-tenants`
+     * Requires `platform.tenants.create`.
+     */
+    postPlatformDemotenants(body: {
+      /** How many demo businesses to make, at most 20. */
+      count: number;
+    }): Promise<{
+      id: string;
+      count: number;
+      status: "queued" | "running" | "done";
+      startedAt: string;
+      finishedAt: unknown;
+      /** Which demo is being made (1-based) and what it is doing now. Null once finished. */
+      current: {
+        index: number;
+        step: string;
+      } | null;
+      accounts: Array<{
+        tenantId: string;
+        code: string;
+        displayName: string;
+        legalName: string;
+        kind: string;
+        city: string;
+        /** Everyone in this demo signs in with it. Shown only by this job; never stored readable. */
+        password: string;
+        branches: Array<{
+          code: string;
+          name: string;
+        }>;
+        /** The staff roles made for this demo, with the permissions the dice gave each. */
+        roles: Array<{
+          name: string;
+          permissions: Array<string>;
+        }>;
+        logins: Array<{
+          fullName: string;
+          email: string;
+          role: "owner" | "admin" | "staff";
+          roleName: string;
+          branch: string;
+        }>;
+        /** How many customers, pieces, invoices, orders… were made. */
+        data: Record<string, unknown>;
+        /** Sample data that could not be made. The demo works without it. */
+        warnings: Array<string>;
+        seconds: number;
+      }>;
+      /** Demos that could not be made at all. Nothing of them is left behind. */
+      failures: Array<{
+        index: number;
+        message: string;
+      }>;
+      /** Asked to stop: the demo being made was finished and the rest were not started. */
+      stopped: boolean;
+    }> {
+      return request<{
+      id: string;
+      count: number;
+      status: "queued" | "running" | "done";
+      startedAt: string;
+      finishedAt: unknown;
+      /** Which demo is being made (1-based) and what it is doing now. Null once finished. */
+      current: {
+        index: number;
+        step: string;
+      } | null;
+      accounts: Array<{
+        tenantId: string;
+        code: string;
+        displayName: string;
+        legalName: string;
+        kind: string;
+        city: string;
+        /** Everyone in this demo signs in with it. Shown only by this job; never stored readable. */
+        password: string;
+        branches: Array<{
+          code: string;
+          name: string;
+        }>;
+        /** The staff roles made for this demo, with the permissions the dice gave each. */
+        roles: Array<{
+          name: string;
+          permissions: Array<string>;
+        }>;
+        logins: Array<{
+          fullName: string;
+          email: string;
+          role: "owner" | "admin" | "staff";
+          roleName: string;
+          branch: string;
+        }>;
+        /** How many customers, pieces, invoices, orders… were made. */
+        data: Record<string, unknown>;
+        /** Sample data that could not be made. The demo works without it. */
+        warnings: Array<string>;
+        seconds: number;
+      }>;
+      /** Demos that could not be made at all. Nothing of them is left behind. */
+      failures: Array<{
+        index: number;
+        message: string;
+      }>;
+      /** Asked to stop: the demo being made was finished and the rest were not started. */
+      stopped: boolean;
+    }>('POST', "/api/platform/demo-tenants", { body });
+    },
+    /**
+     * Progress of a demo job, and the logins it made
+     *
+     * Only the operator who started the job can read it, because it carries the passwords. Finished jobs are kept for an hour and then forgotten — copy the logins before that.
+     * 
+     * Jobs live in the memory of the server that started them: a restart forgets them, and a demo being made at that moment is left half-made (delete it from its tenant page).
+     * `GET /api/platform/demo-tenants/jobs/:id`
+     * Requires `platform.tenants.create`.
+     */
+    getPlatformDemotenantsJobsById(params: { id: string }): Promise<{
+      id: string;
+      count: number;
+      status: "queued" | "running" | "done";
+      startedAt: string;
+      finishedAt: unknown;
+      /** Which demo is being made (1-based) and what it is doing now. Null once finished. */
+      current: {
+        index: number;
+        step: string;
+      } | null;
+      accounts: Array<{
+        tenantId: string;
+        code: string;
+        displayName: string;
+        legalName: string;
+        kind: string;
+        city: string;
+        /** Everyone in this demo signs in with it. Shown only by this job; never stored readable. */
+        password: string;
+        branches: Array<{
+          code: string;
+          name: string;
+        }>;
+        /** The staff roles made for this demo, with the permissions the dice gave each. */
+        roles: Array<{
+          name: string;
+          permissions: Array<string>;
+        }>;
+        logins: Array<{
+          fullName: string;
+          email: string;
+          role: "owner" | "admin" | "staff";
+          roleName: string;
+          branch: string;
+        }>;
+        /** How many customers, pieces, invoices, orders… were made. */
+        data: Record<string, unknown>;
+        /** Sample data that could not be made. The demo works without it. */
+        warnings: Array<string>;
+        seconds: number;
+      }>;
+      /** Demos that could not be made at all. Nothing of them is left behind. */
+      failures: Array<{
+        index: number;
+        message: string;
+      }>;
+      /** Asked to stop: the demo being made was finished and the rest were not started. */
+      stopped: boolean;
+    }> {
+      return request<{
+      id: string;
+      count: number;
+      status: "queued" | "running" | "done";
+      startedAt: string;
+      finishedAt: unknown;
+      /** Which demo is being made (1-based) and what it is doing now. Null once finished. */
+      current: {
+        index: number;
+        step: string;
+      } | null;
+      accounts: Array<{
+        tenantId: string;
+        code: string;
+        displayName: string;
+        legalName: string;
+        kind: string;
+        city: string;
+        /** Everyone in this demo signs in with it. Shown only by this job; never stored readable. */
+        password: string;
+        branches: Array<{
+          code: string;
+          name: string;
+        }>;
+        /** The staff roles made for this demo, with the permissions the dice gave each. */
+        roles: Array<{
+          name: string;
+          permissions: Array<string>;
+        }>;
+        logins: Array<{
+          fullName: string;
+          email: string;
+          role: "owner" | "admin" | "staff";
+          roleName: string;
+          branch: string;
+        }>;
+        /** How many customers, pieces, invoices, orders… were made. */
+        data: Record<string, unknown>;
+        /** Sample data that could not be made. The demo works without it. */
+        warnings: Array<string>;
+        seconds: number;
+      }>;
+      /** Demos that could not be made at all. Nothing of them is left behind. */
+      failures: Array<{
+        index: number;
+        message: string;
+      }>;
+      /** Asked to stop: the demo being made was finished and the rest were not started. */
+      stopped: boolean;
+    }>('GET', `/api/platform/demo-tenants/jobs/${encodeURIComponent(params.id)}`);
+    },
+    /**
+     * Stop a demo job after the demo it is making
+     *
+     * For a count typed by mistake. The demo being made is finished — cutting it off would leave half a business to delete — and no further demo is started. Demos already made stay; delete them from their tenant pages if they are not wanted. Stopping a finished job changes nothing.
+     * `POST /api/platform/demo-tenants/jobs/:id/stop`
+     * Requires `platform.tenants.create`.
+     */
+    postPlatformDemotenantsJobsByIdStop(params: { id: string }): Promise<{
+      id: string;
+      count: number;
+      status: "queued" | "running" | "done";
+      startedAt: string;
+      finishedAt: unknown;
+      /** Which demo is being made (1-based) and what it is doing now. Null once finished. */
+      current: {
+        index: number;
+        step: string;
+      } | null;
+      accounts: Array<{
+        tenantId: string;
+        code: string;
+        displayName: string;
+        legalName: string;
+        kind: string;
+        city: string;
+        /** Everyone in this demo signs in with it. Shown only by this job; never stored readable. */
+        password: string;
+        branches: Array<{
+          code: string;
+          name: string;
+        }>;
+        /** The staff roles made for this demo, with the permissions the dice gave each. */
+        roles: Array<{
+          name: string;
+          permissions: Array<string>;
+        }>;
+        logins: Array<{
+          fullName: string;
+          email: string;
+          role: "owner" | "admin" | "staff";
+          roleName: string;
+          branch: string;
+        }>;
+        /** How many customers, pieces, invoices, orders… were made. */
+        data: Record<string, unknown>;
+        /** Sample data that could not be made. The demo works without it. */
+        warnings: Array<string>;
+        seconds: number;
+      }>;
+      /** Demos that could not be made at all. Nothing of them is left behind. */
+      failures: Array<{
+        index: number;
+        message: string;
+      }>;
+      /** Asked to stop: the demo being made was finished and the rest were not started. */
+      stopped: boolean;
+    }> {
+      return request<{
+      id: string;
+      count: number;
+      status: "queued" | "running" | "done";
+      startedAt: string;
+      finishedAt: unknown;
+      /** Which demo is being made (1-based) and what it is doing now. Null once finished. */
+      current: {
+        index: number;
+        step: string;
+      } | null;
+      accounts: Array<{
+        tenantId: string;
+        code: string;
+        displayName: string;
+        legalName: string;
+        kind: string;
+        city: string;
+        /** Everyone in this demo signs in with it. Shown only by this job; never stored readable. */
+        password: string;
+        branches: Array<{
+          code: string;
+          name: string;
+        }>;
+        /** The staff roles made for this demo, with the permissions the dice gave each. */
+        roles: Array<{
+          name: string;
+          permissions: Array<string>;
+        }>;
+        logins: Array<{
+          fullName: string;
+          email: string;
+          role: "owner" | "admin" | "staff";
+          roleName: string;
+          branch: string;
+        }>;
+        /** How many customers, pieces, invoices, orders… were made. */
+        data: Record<string, unknown>;
+        /** Sample data that could not be made. The demo works without it. */
+        warnings: Array<string>;
+        seconds: number;
+      }>;
+      /** Demos that could not be made at all. Nothing of them is left behind. */
+      failures: Array<{
+        index: number;
+        message: string;
+      }>;
+      /** Asked to stop: the demo being made was finished and the rest were not started. */
+      stopped: boolean;
+    }>('POST', `/api/platform/demo-tenants/jobs/${encodeURIComponent(params.id)}/stop`);
+    },
+    /**
+     * Delete a demo business and everything in it
+     *
+     * Only for demos (`is_demo`). A real business is never deleted — suspend or close it instead, which keeps its records. Everything the demo held goes: users, branches, stock, bills, ledgers. The console’s own audit log keeps its entries about it.
+     * `DELETE /api/platform/tenants/:id`
+     * Requires `platform.tenants.update`.
+     */
+    deletePlatformTenantsById(params: { id: string }): Promise<void> {
+      return request<void>('DELETE', `/api/platform/tenants/${encodeURIComponent(params.id)}`);
     },
     /**
      * The roles this business has
@@ -5282,15 +6746,22 @@ export function createClient(options: ClientOptions) {
      * Change a tenant’s module entitlement
      *
      * Grant, revoke, or move a module between included / purchased / trial. A module whose trial or term has lapsed still appears in the tenant’s dock, but locked — so they can see what they are missing rather than having it silently vanish.
+     * 
+     * `enabled: false` switches the module off: it leaves the tenant’s dock and every endpoint belonging to it answers 403 `module_disabled`, for staff and support sessions alike. `disabledSubmodules` does the same for single sub-modules that have permissions of their own (e.g. `pos.purchase`) — see `enforced` on `GET /api/platform/modules`. Other sub-module keys are accepted but nothing checks them yet. Data is never touched, so switching back on restores everything as it was.
+     * 
+     * Master Data, Settings and SaaS Admin are `required` in the catalog and cannot be switched off.
      * `PUT /api/platform/tenants/:id/modules/:moduleKey`
      * Requires `platform.entitlement.update`.
      */
     putPlatformTenantsByIdModulesByModuleKey(params: { id: string; moduleKey: string }, body: {
+      /** false switches the whole module off for this tenant. */
       enabled?: boolean;
       licence?: "included" | "purchased" | "trial" | "expired";
+      /** Omit to keep the current date; null clears it. */
       trialEndsAt?: string | null;
+      /** Omit to keep the current date; null clears it. */
       expiresAt?: string | null;
-      /** Sub-module keys to hide, e.g. ["orders.repair"]. */
+      /** The full list of sub-module keys to switch off, e.g. ["orders.repair"]. Replaces the previous list; [] turns them all back on. */
       disabledSubmodules?: Array<string>;
     }): Promise<Record<string, unknown>> {
       return request<Record<string, unknown>>('PUT', `/api/platform/tenants/${encodeURIComponent(params.id)}/modules/${encodeURIComponent(params.moduleKey)}`, { body });

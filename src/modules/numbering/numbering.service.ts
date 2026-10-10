@@ -175,6 +175,13 @@ export const DEFAULT_SERIES = [
   { doc_type: 'girvi_receipt', name: 'Girvi Receipt', prefix: 'GRC-{FYS}-' },
   { doc_type: 'girvi_release', name: 'Girvi Release', prefix: 'GRL-{FYS}-' },
   { doc_type: 'girvi_packet', name: 'Girvi Vault Packet', prefix: 'PKT-{FYS}-' },
+  { doc_type: 'acc_payment', name: 'Payment Voucher', prefix: 'PV-{FYS}-' },
+  { doc_type: 'acc_receipt', name: 'Receipt Voucher', prefix: 'RV-{FYS}-' },
+  { doc_type: 'acc_contra', name: 'Contra Voucher', prefix: 'CV-{FYS}-' },
+  { doc_type: 'acc_journal', name: 'Journal Voucher', prefix: 'JV-{FYS}-' },
+  { doc_type: 'acc_expense', name: 'Expense Voucher', prefix: 'EXP-{FYS}-' },
+  { doc_type: 'acc_opening', name: 'Opening Balance', prefix: 'OB-{FYS}-' },
+  { doc_type: 'acc_system', name: 'Closing Entry', prefix: 'CL-{FYS}-' },
   { doc_type: 'party', name: 'Customer / Supplier Code', prefix: 'C', padding: 6, reset_period: 'never' as const },
   { doc_type: 'karigar', name: 'Karigar Code', prefix: 'K', padding: 4, reset_period: 'never' as const },
 ] as const;

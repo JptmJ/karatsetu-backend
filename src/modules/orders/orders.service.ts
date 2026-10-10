@@ -21,6 +21,7 @@ import { reserveDocumentNumbers } from '../numbering/numbering.service.js';
 import { loadPricer, type PriceRequest } from '../masters/pricing/pricing.service.js';
 import { postVoucher, reverseVoucher, type MoneyEntry } from '../accounts/ledger.service.js';
 import { paymentAccount } from '../purchase/purchase.service.js';
+import { modeCharges, postingSettings } from '../accounts/posting.js';
 import { activeCustomer, checkCashLimit } from '../sales/sales.service.js';
 import { hasPermission } from '../identity/permissions.js';
 import { CONFIG } from '../../core/config/definitions.js';
@@ -720,6 +721,7 @@ export async function addOrderPayment(
   const money: MoneyEntry[] = [
     { ...method.account, debit: amount, narration: `Advance on ${order.order_number}` },
     { accountCode: '2400', partyId: customer.id, credit: amount, narration: `Advance on ${order.order_number} (${receiptNumber})` },
+    ...modeCharges(await postingSettings(tx), method, amount, receiptNumber!),
   ];
   const { voucherId } = await postVoucher(tx, {
     voucherType: 'receipt', voucherDate: docDate, branchId, sourceType: 'order_payment', sourceId: payment.id,

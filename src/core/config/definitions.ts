@@ -717,6 +717,186 @@ export const CONFIG = {
     schema: z.boolean(), default: true, scope: 'tenant',
   }),
 
+  /* --- accounts (Accounts → Settings) --- */
+  accGstRegistration: defineConfig({
+    key: 'accounts.gst.registration', group: 'accounts', label: 'GST registration',
+    description: 'regular = GST is charged on bills and input credit is claimed; composition = bills of supply with no GST, a flat tax on turnover, and no input credit. Ask your accountant which you are.',
+    schema: z.enum(['regular', 'composition']), default: 'regular' as const, scope: 'tenant', sensitive: true,
+  }),
+  accCompositionRate: defineConfig({
+    key: 'accounts.gst.composition_rate_percent', group: 'accounts', label: 'Composition tax on turnover (%)',
+    description: 'Only used under composition. Currently 1% for traders and manufacturers.',
+    schema: z.coerce.number().min(0).max(10), default: 1, scope: 'tenant', sensitive: true,
+  }),
+  accRevenueSplit: defineConfig({
+    key: 'accounts.sales.revenue_split', group: 'accounts', label: 'How sales are written in the books',
+    description: 'split = metal value, making, wastage, stones, hallmarking and discount each in their own ledger, so the profit report shows what really earned the money; single = one Sales ledger.',
+    schema: z.enum(['split', 'single']), default: 'split' as const, scope: 'tenant',
+  }),
+  accCardCharges: defineConfig({
+    key: 'accounts.card_charges.post', group: 'accounts', label: 'Book card and wallet fees automatically',
+    description: 'On = when a payment mode has a fee % in Masters, that fee is written to Bank & Card Charges the moment the money comes in, so the bank balance matches the bank.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  accFyStartMonth: defineConfig({
+    key: 'accounts.fy.start_month', group: 'accounts', label: 'Financial year starts in month',
+    description: '4 = April, the Indian financial year.',
+    schema: z.coerce.number().int().min(1).max(12), default: 4, scope: 'tenant', sensitive: true,
+  }),
+  accBooksStart: defineConfig({
+    key: 'accounts.books.start_date', group: 'accounts', label: 'Books begin on',
+    description: 'Opening balances are dated this day. Nothing can be posted earlier. Blank = no limit.',
+    schema: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/), default: '', scope: 'tenant', sensitive: true,
+  }),
+  accDayOpening: defineConfig({
+    key: 'accounts.day.count_on_open', group: 'accounts', label: 'Count the cash when the day opens',
+    description: 'Off = the day opens with what the books say is in the drawer, no counting.',
+    schema: z.boolean(), default: true, scope: 'branch',
+  }),
+  accDayLock: defineConfig({
+    key: 'accounts.day.lock_on_close', group: 'accounts', label: 'Lock a day once it is closed',
+    description: 'On = after the day close nothing more can be dated that day at that branch, unless the day is reopened.',
+    schema: z.boolean(), default: true, scope: 'branch',
+  }),
+  accDayDenominations: defineConfig({
+    key: 'accounts.day.denominations', group: 'accounts', label: 'Notes and coins counted',
+    description: 'Comma separated, largest first.',
+    schema: z.string().regex(/^\s*\d+(\s*,\s*\d+)*\s*$/), default: '500,200,100,50,20,10,5,2,1', scope: 'tenant',
+  }),
+  accDayTolerance: defineConfig({
+    key: 'accounts.day.cash_tolerance', group: 'accounts', label: 'Cash difference allowed without a reason (₹)',
+    description: 'A difference above this needs a note before the day can close.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'branch',
+  }),
+  accDayDifference: defineConfig({
+    key: 'accounts.day.difference_posting', group: 'accounts', label: 'A cash short or excess is',
+    description: 'post = written to Cash Short / Excess so the books match the drawer; record = only noted on the day close.',
+    schema: z.enum(['post', 'record']), default: 'post' as const, scope: 'tenant',
+  }),
+  accMonthAutoLock: defineConfig({
+    key: 'accounts.month.auto_lock', group: 'accounts', label: 'Lock each month automatically',
+    description: 'On = a month locks by itself the given number of days after it ends, even if nobody closes it.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  accMonthLockDays: defineConfig({
+    key: 'accounts.month.lock_after_days', group: 'accounts', label: 'Days after month end before it locks',
+    description: 'Only used when months lock automatically. 10 leaves time to enter late bills.',
+    schema: z.coerce.number().int().min(0).max(90), default: 10, scope: 'tenant',
+  }),
+  accMonthGst: defineConfig({
+    key: 'accounts.month.gst_settlement', group: 'accounts', label: 'Set off GST when a month closes',
+    description: 'On = closing a month moves output GST less input credit into GST Payable (Net), which is what you pay the government.',
+    schema: z.boolean(), default: true, scope: 'tenant',
+  }),
+  accPeriodReopen: defineConfig({
+    key: 'accounts.period.allow_reopen', group: 'accounts', label: 'A closed month or year can be reopened',
+    description: 'Only by someone with the reopen permission, and the reason is kept.',
+    schema: z.boolean(), default: true, scope: 'tenant', sensitive: true,
+  }),
+  accYearCloseTo: defineConfig({
+    key: 'accounts.year.profit_to', group: 'accounts', label: 'The year’s profit is moved to',
+    description: 'capital = the owner’s Capital Account, usual for a proprietor; retained = Retained Earnings, usual for a company.',
+    schema: z.enum(['capital', 'retained']), default: 'capital' as const, scope: 'tenant',
+  }),
+  accExpenseApproval: defineConfig({
+    key: 'accounts.expense.approval_required', group: 'accounts', label: 'Expenses need approval',
+    description: 'On = an expense entered by staff waits for someone with approval rights before it reaches the books.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  accExpenseLimit: defineConfig({
+    key: 'accounts.expense.approval_limit', group: 'accounts', label: 'Approval needed above (₹)',
+    description: 'Only when approval is on. 0 = every expense needs approval.',
+    schema: z.coerce.number().min(0), default: 0, scope: 'tenant',
+  }),
+  accTallyEnabled: defineConfig({
+    key: 'accounts.tally.enabled', group: 'accounts', label: 'Export to Tally',
+    description: 'On = the Tally export appears in Accounts, for an accountant who keeps the books in Tally.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  accTallyCompany: defineConfig({
+    key: 'accounts.tally.company_name', group: 'accounts', label: 'Company name in Tally',
+    description: 'Exactly as it is spelt in Tally. Blank = the business name.',
+    schema: z.string().max(120), default: '', scope: 'tenant',
+  }),
+  accRevaluation: defineConfig({
+    key: 'accounts.revaluation.enabled', group: 'accounts', label: 'Value metal stock at today’s rate at month end',
+    description: 'On = closing a month shows the paper gain or loss on metal stock in the books for that day, and reverses it the next day. Off = stock stays at cost.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  accMetalRate: defineConfig({
+    key: 'accounts.metal.valuation_rate', group: 'accounts', label: 'Metal is valued at the',
+    description: 'buying = what you would pay for it today (the cautious figure); selling = what you would charge.',
+    schema: z.enum(['buying', 'selling']), default: 'buying' as const, scope: 'tenant',
+  }),
+  accTdsEnabled: defineConfig({
+    key: 'accounts.tds.enabled', group: 'accounts', label: 'Deduct TDS on payments',
+    description: 'On = an expense or payment can hold back TDS, which is kept in TDS Payable until paid to the government.',
+    schema: z.boolean(), default: false, scope: 'tenant',
+  }),
+  accTdsPercent: defineConfig({
+    key: 'accounts.tds.default_percent', group: 'accounts', label: 'TDS rate suggested (%)',
+    description: 'Staff can change it on the voucher.',
+    schema: z.coerce.number().min(0).max(30), default: 10, scope: 'tenant',
+  }),
+  accWatchBackdate: defineConfig({
+    key: 'accounts.watch.backdate_days', group: 'accounts', label: 'Flag entries dated this many days back',
+    description: 'The watchlist shows any voucher entered more than this many days after its date.',
+    schema: z.coerce.number().int().min(0).max(365), default: 3, scope: 'tenant',
+  }),
+  accWatchDiscount: defineConfig({
+    key: 'accounts.watch.discount_percent', group: 'accounts', label: 'Flag bills discounted above (%)',
+    description: 'Of the bill before discount.',
+    schema: z.coerce.number().min(0).max(100), default: 10, scope: 'tenant',
+  }),
+  accWatchCash: defineConfig({
+    key: 'accounts.watch.cash_limit', group: 'accounts', label: 'Flag cash from one person in a day at or above (₹)',
+    description: 'Section 269ST bars taking ₹2 lakh or more in cash from one person in a day.',
+    schema: z.coerce.number().min(0), default: 200000, scope: 'tenant',
+  }),
+  accForecastDays: defineConfig({
+    key: 'accounts.forecast.days', group: 'accounts', label: 'Cash forecast looks ahead (days)',
+    description: 'What is due in and due out over this many days.',
+    schema: z.coerce.number().int().min(7).max(120), default: 30, scope: 'tenant',
+  }),
+
+  /* --- reports (Reports → Settings) --- */
+  reportsDefaultRange: defineConfig({
+    key: 'reports.default_range', group: 'reports', label: 'A report opens on',
+    description: 'The period a report shows when none is chosen.',
+    schema: z.enum(['today', 'this_week', 'this_month', 'last_month', 'this_quarter', 'this_fy', 'last_30', 'last_90']),
+    default: 'this_month' as const, scope: 'tenant',
+  }),
+  reportsPageSize: defineConfig({
+    key: 'reports.page_size', group: 'reports', label: 'Rows shown per page',
+    description: 'A list longer than this is shown a page at a time. Totals always cover every row.',
+    schema: z.coerce.number().int().min(20).max(2000), default: 200, scope: 'tenant',
+  }),
+  reportsExportMax: defineConfig({
+    key: 'reports.export_max_rows', group: 'reports', label: 'Most rows in one download',
+    description: 'Excel and CSV downloads stop at this many rows.',
+    schema: z.coerce.number().int().min(1000).max(200000), default: 50000, scope: 'tenant',
+  }),
+  reportsSlowDays: defineConfig({
+    key: 'reports.slow_moving_days', group: 'reports', label: 'Stock counts as slow-moving after (days)',
+    description: 'Used by the slow-moving stock report.',
+    schema: z.coerce.number().int().min(7).max(1825), default: 90, scope: 'tenant',
+  }),
+  reportsDormantDays: defineConfig({
+    key: 'reports.dormant_days', group: 'reports', label: 'A customer has gone quiet after (days)',
+    description: 'Used by the customers-gone-quiet report.',
+    schema: z.coerce.number().int().min(30).max(3650), default: 365, scope: 'tenant',
+  }),
+  reportsHighValueBill: defineConfig({
+    key: 'reports.high_value_bill', group: 'reports', label: 'High-value bill from (₹)',
+    description: 'Bills at or above this are listed with PAN (Rule 114B asks for ₹2 lakh).',
+    schema: z.coerce.number().min(0), default: 200000, scope: 'tenant',
+  }),
+  reportsInboxKeepDays: defineConfig({
+    key: 'reports.inbox.keep_days', group: 'reports', label: 'Keep delivered reports for (days)',
+    description: 'Older items in the Reports inbox are cleared away.',
+    schema: z.coerce.number().int().min(7).max(730), default: 90, scope: 'tenant',
+  }),
+
   stockValuation: defineConfig({
     key: 'inventory.valuation_method',
     group: 'inventory',
